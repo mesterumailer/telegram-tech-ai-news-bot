@@ -19,6 +19,12 @@ export default {
       try { digest = await request.json(); } catch { return json({ error: "body must be valid JSON" }, 400); }
       const validation = validateDigest(digest);
       if (!validation.ok) return json({ error: validation.error }, 400);
+      const mode = await getSetting(env, "publication_mode", "manual");
+      if (mode !== "auto") {
+        await queueDigestForReview(digest, env, "manual_api");
+        if (env.TELEGRAM_ADMIN_USER_ID) await notifyPendingDigest(env, digest);
+        return json({ ok: true, status: "queued_for_admin_review", batch_id: digest.batch_id });
+      }
       const result = await processDigest(digest, env, "manual");
       return json(result, result.ok ? 200 : 502);
     }
