@@ -21,8 +21,8 @@ export default {
       if (!validation.ok) return json({ error: validation.error }, 400);
       const mode = await getSetting(env, "publication_mode", "manual");
       if (mode !== "auto") {
-        await queueDigestForReview(digest, env, "manual_api");
-        if (env.TELEGRAM_ADMIN_USER_ID) await notifyPendingDigest(env, digest);
+        const queuedCount = await queueDigestForReview(digest, env, "manual_api");
+        if (queuedCount > 0 && env.TELEGRAM_ADMIN_USER_ID) await notifyPendingDigest(env, digest);
         return json({ ok: true, status: "queued_for_admin_review", batch_id: digest.batch_id });
       }
       const result = await processDigest(digest, env, "manual");
@@ -59,8 +59,8 @@ export default {
         if (mode === "auto" && env.PUBLISH_ENABLED === "true") {
           await processDigest(digest, env, "scheduled");
         } else {
-          await queueDigestForReview(digest, env, "scheduled");
-          if (env.TELEGRAM_ADMIN_USER_ID) await notifyPendingDigest(env, digest);
+          const queuedCount = await queueDigestForReview(digest, env, "scheduled");
+          if (queuedCount > 0 && env.TELEGRAM_ADMIN_USER_ID) await notifyPendingDigest(env, digest);
           if (mode === "auto" && env.PUBLISH_ENABLED !== "true") await logEvent(env, "auto_publish_paused", "PUBLISH_ENABLED master switch is false");
         }
       } catch (error) {
@@ -277,12 +277,15 @@ async function showLatestNews(env, chatId) {
 }
 
 async function queueDigestForReview(digest, env, origin) {
+  let inserted = 0;
   for (const story of digest.stories) {
-    await env.DB.prepare(`INSERT INTO story_review_queue (story_id, batch_id, story_json, review_status, origin, updated_at)
+    const result = await env.DB.prepare(`INSERT INTO story_review_queue (story_id, batch_id, story_json, review_status, origin, updated_at)
       VALUES (?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)
       ON CONFLICT(story_id) DO NOTHING`)
       .bind(story.id, digest.batch_id, JSON.stringify(story), origin).run();
+    inserted += result.meta?.changes ?? 0;
   }
+  return inserted;
 }
 
 async function notifyPendingDigest(env, digest) {
