@@ -1,15 +1,31 @@
 {
-  "batch_id": "2026-10-29-example",
-  "generated_at": "2026-10-29T08:00:00Z",
+  "batch_id": "2026-10-30-example-only",
+  "generated_at": "2026-10-30T08:00:00Z",
   "language": "fa",
   "stories": [
     {
       "id": "example-story-001",
-      "title": "عنوان فارسی خبر نمونه",
-      "summary": "این یک متن نمونه است و خبر واقعی نیست. پیش از انتشار، این نمونه را با خبرهای معتبر و واقعی جایگزین کنید.",
-      "source_url": "https://example.com/news-item",
+      "title": "عنوان فارسی خبر نمونه اول",
+      "summary": "این متن صرفاً نمونه است و خبر واقعی نیست. آن را با خبر معتبر جایگزین کنید.",
+      "source_url": "https://example.com/news-item-1",
       "category": "هوش مصنوعی",
-      "published_at": "2026-10-29T07:00:00Z"
+      "published_at": "2026-10-30T07:00:00Z"
+    },
+    {
+      "id": "example-story-002",
+      "title": "عنوان فارسی خبر نمونه دوم",
+      "summary": "این متن صرفاً نمونه است و خبر واقعی نیست. آن را با خبر معتبر جایگزین کنید.",
+      "source_url": "https://example.com/news-item-2",
+      "category": "فناوری",
+      "published_at": "2026-10-30T06:30:00Z"
+    },
+    {
+      "id": "example-story-003",
+      "title": "عنوان فارسی خبر نمونه سوم",
+      "summary": "این متن صرفاً نمونه است و خبر واقعی نیست. آن را با خبر معتبر جایگزین کنید.",
+      "source_url": "https://example.com/news-item-3",
+      "category": "کسب‌وکار",
+      "published_at": "2026-10-30T06:00:00Z"
     }
   ]
 }
