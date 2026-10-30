@@ -237,19 +237,25 @@ async function handleTelegramUpdate(update, env) {
 
   const callback = update?.callback_query;
   if (!callback) return;
+  const data = String(callback.data || "");
+  const chatId = callback.message?.chat?.id;
+  if (!chatId || String(callback.message?.chat?.type) !== "private") return;
+
+  // The public latest-news button is read-only and does not require admin access.
+  if (data === "public_latest") {
+    await answerCallback(env, callback.id);
+    return showLatestNews(env, chatId, false);
+  }
+
   const userId = String(callback.from?.id || "");
   if (!isAdmin(userId, env)) {
     await answerCallback(env, callback.id, "این عملیات فقط برای مدیر ربات مجاز است.", true);
     return;
   }
   await answerCallback(env, callback.id);
-  const data = String(callback.data || "");
-  const chatId = callback.message?.chat?.id;
-  if (!chatId || String(callback.message?.chat?.type) !== "private") return;
 
   if (data === "menu") return sendAdminMenu(env, chatId);
   if (data === "latest") return showLatestNews(env, chatId, true);
-  if (data === "public_latest") return showLatestNews(env, chatId, false);
   if (data === "settings") return showPublicationSettings(env, chatId);
   if (data === "mode:manual" || data === "mode:auto") {
     await setSetting(env, "publication_mode", data.slice(5));
