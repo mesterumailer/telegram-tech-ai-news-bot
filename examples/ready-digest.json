@@ -1,0 +1,15 @@
+{
+  "batch_id": "2026-10-29-example",
+  "generated_at": "2026-10-29T08:00:00Z",
+  "language": "fa",
+  "stories": [
+    {
+      "id": "example-story-001",
+      "title": "عنوان فارسی خبر نمونه",
+      "summary": "این یک متن نمونه است و خبر واقعی نیست. پیش از انتشار، این نمونه را با خبرهای معتبر و واقعی جایگزین کنید.",
+      "source_url": "https://example.com/news-item",
+      "category": "هوش مصنوعی",
+      "published_at": "2026-10-29T07:00:00Z"
+    }
+  ]
+}
