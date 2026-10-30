@@ -59,7 +59,7 @@ export function validateDigest(digest) {
       const parsed = new URL(s.source_url);
       if (parsed.protocol !== "https:") return { ok: false, error: `stories[${i}].source_url must use HTTPS` };
     } catch { return { ok: false, error: `stories[${i}].source_url is invalid` }; }
-    if (s.title.length > 300 || s.summary.length > 2500) return { ok: false, error: `stories[${i}] text is too long`; }
+    if (s.title.length > 300 || s.summary.length > 2500) return { ok: false, error: `stories[${i}] text is too long` };
   }
   return { ok: true };
 }
@@ -75,7 +75,7 @@ async function fetchGitHubDigest(env) {
   if (!response.ok) throw new Error(`GitHub read failed with HTTP ${response.status}`);
   const file = await response.json();
   if (file.type !== "file" || typeof file.content !== "string") throw new Error("GitHub path is not a file");
-  const decoded = atob(file.content.replace(/\\s/g, ""));
+  const decoded = atob(file.content.replace(/\s/g, ""));
   const bytes = Uint8Array.from(decoded, c => c.charCodeAt(0));
   return JSON.parse(new TextDecoder().decode(bytes));
 }
@@ -112,7 +112,7 @@ async function processDigest(digest, env, origin) {
 
 async function sendTelegram(env, story) {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHANNEL_ID) throw new Error("Missing Telegram credentials");
-  const text = `📰 <b>${escapeHtml(story.title)}</b>\\n\\n${escapeHtml(story.summary)}\\n\\n🔎 <a href="${escapeAttribute(story.source_url)}">منبع خبر</a>${story.category ? `\\n🏷 ${escapeHtml(story.category)}` : ""}`;
+  const text = `📰 <b>${escapeHtml(story.title)}</b>\n\n${escapeHtml(story.summary)}\n\n🔎 <a href="${escapeAttribute(story.source_url)}">منبع خبر</a>${story.category ? `\n🏷 ${escapeHtml(story.category)}` : ""}`;
   const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
