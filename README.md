@@ -69,13 +69,18 @@ Body: محتوای JSON مطابق قالب بالا.
 - The three-story validation currently checks structure and HTTPS, **not** source reputation or factual accuracy. Trusted-source validation and editorial review remain required before enabling publication.
 
 
-## Telegram admin interface (phase 1)
+## Telegram user and admin interface (phase 1)
 
-The private Telegram admin panel is served by the Worker webhook at `POST /telegram/webhook`.
+The Telegram bot webhook is served at `POST /telegram/webhook`. Any user can start a private chat with the bot and use the public commands; the manager's numeric Telegram ID is used only to protect administrative actions.
 
-Commands:
+Public commands (all users):
+- `/start` or `/menu`: show the public welcome menu.
+- `/latest`: display the latest prepared stories as read-only cards with source links.
+- `/help`: show the public menu again.
+
+Admin commands (manager only):
 - `/start` or `/menu`: open the admin menu.
-- `/latest`: load the current GitHub digest and display each story with its source and review buttons.
+- `/latest`: load the current GitHub digest and display each story with review buttons.
 - `/settings`: choose manual approval or automatic publishing.
 
 Publication behavior:
@@ -83,7 +88,7 @@ Publication behavior:
 - In manual mode, scheduled and API-submitted digests enter `story_review_queue`; only a manager's approval can publish an individual story.
 - In auto mode, the scheduled Worker may publish valid digest stories, but only when the independent master switch `PUBLISH_ENABLED=true`.
 - `PUBLISH_ENABLED=false` is a hard safety stop: no story can be sent to the public channel, including a manually approved story.
-- The admin user is restricted by `TELEGRAM_ADMIN_USER_ID`; webhook requests are verified with `TELEGRAM_WEBHOOK_SECRET`.
+- Only administrative commands and callback actions are restricted by `TELEGRAM_ADMIN_USER_ID`; public users cannot approve/reject stories or change publication settings. Webhook requests are verified with `TELEGRAM_WEBHOOK_SECRET`.
 
 Required Cloudflare setup after deploying this version:
 1. Apply migration `0002_telegram_admin_ui.sql` to the existing D1 database.
