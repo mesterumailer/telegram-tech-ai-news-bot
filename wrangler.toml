@@ -1,0 +1,20 @@
+name = "telegram-tech-ai-news-publisher"
+main = "src/index.js"
+compatibility_date = "2026-10-29"
+
+[triggers]
+# Every 6 hours (UTC). Cron timing is approximate, not a guarantee of exact minute execution.
+crons = ["0 */6 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "telegram-news-state"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[vars]
+PUBLISH_ENABLED = "false"
+GITHUB_OWNER = "REPLACE_WITH_OWNER"
+GITHUB_REPO = "REPLACE_WITH_REPO"
+GITHUB_BRANCH = "main"
+GITHUB_PATH = "content/ready-digest.json"
