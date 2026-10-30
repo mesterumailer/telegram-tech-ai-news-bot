@@ -15,6 +15,21 @@ export default {
       const result = await processDigest(digest, env, "manual");
       return json(result, result.ok ? 200 : 502);
     }
+    if (request.method === "POST" && url.pathname === "/admin/test-message") {
+      if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
+      if (env.TELEGRAM_TEST_ENABLED !== "true") return json({ error: "telegram test endpoint is disabled" }, 403);
+      try {
+        await sendTelegram(env, {
+          title: "پیام آزمایشی ربات اخبار فناوری",
+          summary: "این یک پیام آزمایشی است. اگر این پیام را در کانال می‌بینید، اتصال Cloudflare Worker به ربات تلگرام برقرار است. این پیام خبر واقعی نیست.",
+          source_url: "https://github.com/mesterumailer/telegram-tech-ai-news-bot",
+          category: "آزمایش سیستم"
+        });
+        return json({ ok: true, status: "test_message_sent" });
+      } catch (error) {
+        return json({ ok: false, error: safeError(error) }, 502);
+      }
+    }
     return json({ error: "not found" }, 404);
   },
   async scheduled(controller, env, ctx) {
