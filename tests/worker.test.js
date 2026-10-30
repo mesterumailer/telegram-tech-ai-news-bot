@@ -32,3 +32,22 @@ test('test-message endpoint is disabled unless explicitly enabled', async () => 
   }), { ADMIN_SECRET: 'test-secret', TELEGRAM_TEST_ENABLED: 'false' });
   assert.equal(response.status, 403);
 });
+
+
+test('Telegram webhook rejects requests without the configured secret', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/telegram/webhook', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ update_id: 1, message: { text: '/start' } })
+  }), { TELEGRAM_WEBHOOK_SECRET: 'webhook-secret' });
+  assert.equal(response.status, 401);
+});
+
+test('Telegram webhook rejects an incorrect secret', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/telegram/webhook', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': 'wrong-secret' },
+    body: JSON.stringify({ update_id: 1, message: { text: '/start' } })
+  }), { TELEGRAM_WEBHOOK_SECRET: 'webhook-secret' });
+  assert.equal(response.status, 401);
+});
