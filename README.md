@@ -58,3 +58,11 @@ Body: محتوای JSON مطابق قالب بالا.
 - Worker فقط خروجی آماده را منتشر می‌کند؛ خودش خبر را با مدل زبانی تولید نمی‌کند.
 - ارسال تلگرام و ثبت وضعیت دو عملیات جدا هستند؛ در موارد نادرِ قطع اتصال پس از ارسال ممکن است تکرار رخ دهد. این مورد باید در تست‌های بازیابی بررسی و در مرحله بعد با طراحی idempotency قوی‌تر شود.
 - در شروع فقط از حالت dry-run استفاده کنید و هیچ خبر نمونه‌ای را منتشر نکنید.
+
+
+## Publication safety (updated)
+
+- A digest must contain **exactly three** stories with unique IDs and HTTPS source links. Fewer than three valid stories are rejected; the Worker does not fill gaps.
+- Publishing uses an atomic D1 claim. A story already marked `sent` is skipped.
+- Stories left in `pending` or `failed` are not automatically retried. They are returned as `manual_review_required` (or `failed`) because a timeout/crash can leave uncertainty about whether Telegram accepted the post. This conservative policy avoids accidental duplicate posts; manual reconciliation is required before retrying.
+- The three-story validation currently checks structure and HTTPS, **not** source reputation or factual accuracy. Trusted-source validation and editorial review remain required before enabling publication.
