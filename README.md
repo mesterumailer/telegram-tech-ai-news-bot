@@ -9,6 +9,7 @@
 - Cloudflare Worker: بررسی فایل هر ۶ ساعت و انتشار خبرهای جدید در کانال.
 - Cloudflare D1: ثبت شناسه خبرها و وضعیت ارسال برای جلوگیری از تکرار در اجرای مجدد.
 - مسیر جایگزین: `POST /admin/submit` با `Authorization: Bearer <ADMIN_SECRET>` برای ارسال JSON آماده‌شده.
+- مسیر آزمایش واقعی تلگرام: `POST /admin/test-message`؛ فقط با `TELEGRAM_TEST_ENABLED=true` و `ADMIN_SECRET` فعال می‌شود و یک پیام ثابت و مشخصاً آزمایشی می‌فرستد. این مسیر مستقل از `PUBLISH_ENABLED` است و Digest سه‌خبری را تغییر نمی‌دهد.
 - انتشار عمومی در شروع غیرفعال است (`PUBLISH_ENABLED=false`).
 
 ## ساختار فایل‌ها
