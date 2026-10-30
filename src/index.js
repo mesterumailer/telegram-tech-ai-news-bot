@@ -48,13 +48,16 @@ function authorized(request, env) {
 export function validateDigest(digest) {
   if (!digest || typeof digest !== "object" || Array.isArray(digest)) return { ok: false, error: "digest must be a JSON object" };
   if (typeof digest.batch_id !== "string" || !digest.batch_id.trim()) return { ok: false, error: "batch_id is required" };
-  if (!Array.isArray(digest.stories) || digest.stories.length < 1 || digest.stories.length > 3) return { ok: false, error: "stories must contain 1 to 3 items" };
+  if (!Array.isArray(digest.stories) || digest.stories.length !== 3) return { ok: false, error: "exactly 3 validated stories are required" };
+  const ids = new Set();
   for (let i = 0; i < digest.stories.length; i++) {
     const s = digest.stories[i];
     if (!s || typeof s !== "object") return { ok: false, error: `stories[${i}] must be an object` };
     for (const key of ["id", "title", "summary", "source_url"]) {
       if (typeof s[key] !== "string" || !s[key].trim()) return { ok: false, error: `stories[${i}].${key} is required` };
     }
+    if (ids.has(s.id)) return { ok: false, error: `stories[${i}].id must be unique` };
+    ids.add(s.id);
     try {
       const parsed = new URL(s.source_url);
       if (parsed.protocol !== "https:") return { ok: false, error: `stories[${i}].source_url must use HTTPS` };
@@ -85,18 +88,35 @@ async function processDigest(digest, env, origin) {
   if (!validation.ok) return { ok: false, error: validation.error };
   const outcomes = [];
   for (const story of digest.stories) {
-    const prior = await env.DB.prepare("SELECT status FROM published_stories WHERE story_id = ?").bind(story.id).first();
-    if (prior?.status === "sent") {
-      outcomes.push({ id: story.id, status: "duplicate_skipped" });
-      continue;
-    }
     if (env.PUBLISH_ENABLED !== "true") {
-      await upsertStory(env, story, "dry_run", origin);
-      outcomes.push({ id: story.id, status: "dry_run" });
+      const prior = await env.DB.prepare("SELECT status FROM published_stories WHERE story_id = ?").bind(story.id).first();
+      if (prior?.status === "sent") {
+        outcomes.push({ id: story.id, status: "duplicate_skipped" });
+      } else if (prior && prior.status !== "dry_run") {
+        outcomes.push({ id: story.id, status: "manual_review_required" });
+      } else {
+        await upsertStory(env, story, "dry_run", origin);
+        outcomes.push({ id: story.id, status: "dry_run" });
+      }
       continue;
     }
+
+    // Atomic claim: new stories and dry-run records may proceed. A pending/failed/sent
+    // record is held for manual review to avoid duplicate sends after ambiguous failures.
+    const claim = await env.DB.prepare(`INSERT INTO published_stories
+      (story_id, source_url, title, status, origin, last_error, updated_at)
+      VALUES (?, ?, ?, 'pending', ?, NULL, CURRENT_TIMESTAMP)
+      ON CONFLICT(story_id) DO UPDATE SET status='pending', origin=excluded.origin,
+      last_error=NULL, updated_at=CURRENT_TIMESTAMP
+      WHERE published_stories.status='dry_run'`)
+      .bind(story.id, story.source_url, story.title, origin).run();
+    if ((claim.meta?.changes ?? 0) !== 1) {
+      const prior = await env.DB.prepare("SELECT status FROM published_stories WHERE story_id = ?").bind(story.id).first();
+      outcomes.push({ id: story.id, status: prior?.status === "sent" ? "duplicate_skipped" : "manual_review_required" });
+      continue;
+    }
+
     try {
-      await upsertStory(env, story, "pending", origin);
       await sendTelegram(env, story);
       await upsertStory(env, story, "sent", origin);
       outcomes.push({ id: story.id, status: "sent" });
