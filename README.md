@@ -67,3 +67,29 @@ Body: محتوای JSON مطابق قالب بالا.
 - Publishing uses an atomic D1 claim. A story already marked `sent` is skipped.
 - Stories left in `pending` or `failed` are not automatically retried. They are returned as `manual_review_required` (or `failed`) because a timeout/crash can leave uncertainty about whether Telegram accepted the post. This conservative policy avoids accidental duplicate posts; manual reconciliation is required before retrying.
 - The three-story validation currently checks structure and HTTPS, **not** source reputation or factual accuracy. Trusted-source validation and editorial review remain required before enabling publication.
+
+
+## Telegram admin interface (phase 1)
+
+The private Telegram admin panel is served by the Worker webhook at `POST /telegram/webhook`.
+
+Commands:
+- `/start` or `/menu`: open the admin menu.
+- `/latest`: load the current GitHub digest and display each story with its source and review buttons.
+- `/settings`: choose manual approval or automatic publishing.
+
+Publication behavior:
+- The persisted D1 setting `publication_mode` defaults to `manual`.
+- In manual mode, scheduled and API-submitted digests enter `story_review_queue`; only a manager's approval can publish an individual story.
+- In auto mode, the scheduled Worker may publish valid digest stories, but only when the independent master switch `PUBLISH_ENABLED=true`.
+- `PUBLISH_ENABLED=false` is a hard safety stop: no story can be sent to the public channel, including a manually approved story.
+- The admin user is restricted by `TELEGRAM_ADMIN_USER_ID`; webhook requests are verified with `TELEGRAM_WEBHOOK_SECRET`.
+
+Required Cloudflare setup after deploying this version:
+1. Apply migration `0002_telegram_admin_ui.sql` to the existing D1 database.
+2. Add `TELEGRAM_ADMIN_USER_ID` as a Text variable containing the numeric Telegram user ID of the manager.
+3. Add `TELEGRAM_WEBHOOK_SECRET` as a Secret. Use a random 32+ character value containing only letters, digits, underscores or hyphens.
+4. Register Telegram's webhook URL as `https://telegram-tech-ai-news-publisher.mesterumailer.workers.dev/telegram/webhook`, passing the same webhook secret and allowing `message` and `callback_query` updates.
+5. Keep `PUBLISH_ENABLED=false` while testing the interface. After all tests pass, enable it to allow manual approvals to send; automatic publishing still requires choosing auto mode inside Telegram.
+
+The admin panel is private-chat only. Never put the bot token, admin secret, or webhook secret in GitHub.
