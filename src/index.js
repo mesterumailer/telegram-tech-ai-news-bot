@@ -28,6 +28,25 @@ export default {
       const result = await processDigest(digest, env, "manual");
       return json(result, result.ok ? 200 : 502);
     }
+    if (request.method === "POST" && url.pathname === "/admin/register-webhook") {
+      if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
+      if (!env.TELEGRAM_WEBHOOK_SECRET || !env.TELEGRAM_ADMIN_USER_ID) return json({ error: "TELEGRAM_WEBHOOK_SECRET and TELEGRAM_ADMIN_USER_ID must be configured" }, 400);
+      try {
+        const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            url: `${url.origin}/telegram/webhook`,
+            secret_token: env.TELEGRAM_WEBHOOK_SECRET,
+            allowed_updates: ["message", "callback_query"],
+            drop_pending_updates: false
+          })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.description || `Telegram setWebhook failed with HTTP ${response.status}`);
+        return json({ ok: true, status: "webhook_registered", url: `${url.origin}/telegram/webhook` });
+      } catch (error) { return json({ ok: false, error: safeError(error) }, 502); }
+    }
     if (request.method === "POST" && url.pathname === "/admin/test-message") {
       if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
       if (env.TELEGRAM_TEST_ENABLED !== "true") return json({ error: "telegram test endpoint is disabled" }, 403);
