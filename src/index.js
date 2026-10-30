@@ -215,22 +215,31 @@ function safeError(error) { return String(error?.message || error || "unknown er
 async function handleTelegramUpdate(update, env) {
   const message = update?.message;
   if (message?.text) {
-    const fromId = String(message.from?.id || "");
-    if (!isAdmin(fromId, env)) return;
     const chatId = message.chat?.id;
     if (String(message.chat?.type) !== "private" || !chatId) return;
+    const fromId = String(message.from?.id || "");
+    const admin = isAdmin(fromId, env);
     const command = message.text.trim().split(/\\s+/)[0].split("@")[0].toLowerCase();
-    if (command === "/start" || command === "/menu") return sendAdminMenu(env, chatId);
-    if (command === "/latest") return showLatestNews(env, chatId);
-    if (command === "/settings") return showPublicationSettings(env, chatId);
-    return sendBotMessage(env, chatId, "از منوی زیر استفاده کن.", adminMenuKeyboard());
+
+    // Public commands are available to every user in a private chat.
+    if (command === "/start" || command === "/menu") {
+      return admin ? sendAdminMenu(env, chatId) : sendPublicMenu(env, chatId);
+    }
+    if (command === "/latest") return showLatestNews(env, chatId, admin);
+    if (command === "/help") return sendPublicMenu(env, chatId);
+    if (command === "/settings") {
+      return admin
+        ? showPublicationSettings(env, chatId)
+        : sendBotMessage(env, chatId, "این بخش فقط برای مدیر ربات در دسترس است. برای مشاهده خبرها از دستور /latest استفاده کن.");
+    }
+    return sendPublicMenu(env, chatId);
   }
 
   const callback = update?.callback_query;
   if (!callback) return;
   const userId = String(callback.from?.id || "");
   if (!isAdmin(userId, env)) {
-    await answerCallback(env, callback.id, "دسترسی غیرمجاز", true);
+    await answerCallback(env, callback.id, "این عملیات فقط برای مدیر ربات مجاز است.", true);
     return;
   }
   await answerCallback(env, callback.id);
@@ -239,7 +248,8 @@ async function handleTelegramUpdate(update, env) {
   if (!chatId || String(callback.message?.chat?.type) !== "private") return;
 
   if (data === "menu") return sendAdminMenu(env, chatId);
-  if (data === "latest") return showLatestNews(env, chatId);
+  if (data === "latest") return showLatestNews(env, chatId, true);
+  if (data === "public_latest") return showLatestNews(env, chatId, false);
   if (data === "settings") return showPublicationSettings(env, chatId);
   if (data === "mode:manual" || data === "mode:auto") {
     await setSetting(env, "publication_mode", data.slice(5));
@@ -249,7 +259,6 @@ async function handleTelegramUpdate(update, env) {
   if (data.startsWith("approve:")) return reviewStory(env, chatId, data.slice(8), "approved");
   if (data.startsWith("reject:")) return reviewStory(env, chatId, data.slice(7), "rejected");
 }
-
 function isAdmin(userId, env) {
   return Boolean(env.TELEGRAM_ADMIN_USER_ID && userId && userId === String(env.TELEGRAM_ADMIN_USER_ID));
 }
@@ -259,6 +268,16 @@ function adminMenuKeyboard() {
     [{ text: "🗞 آخرین اخبار جمع‌آوری‌شده", callback_data: "latest" }],
     [{ text: "⚙️ تنظیم شیوه انتشار", callback_data: "settings" }]
   ] };
+}
+
+function publicMenuKeyboard() {
+  return { inline_keyboard: [[{ text: "🗞 مشاهده آخرین خبرها", callback_data: "public_latest" }]] };
+}
+
+async function sendPublicMenu(env, chatId) {
+  return sendBotMessage(env, chatId,
+    "سلام! به ربات اخبار فناوری و هوش مصنوعی خوش آمدی.\\n\\nبرای دیدن آخرین خبرهای آماده، روی دکمه زیر بزن یا دستور /latest را ارسال کن.",
+    publicMenuKeyboard());
 }
 
 async function sendAdminMenu(env, chatId) {
@@ -276,21 +295,29 @@ async function showPublicationSettings(env, chatId, changed = false) {
   ] }, "HTML");
 }
 
-async function showLatestNews(env, chatId) {
+async function showLatestNews(env, chatId, adminView = true) {
   const digest = await fetchGitHubDigest(env);
   if (!digest) return sendBotMessage(env, chatId, "هنوز فایل اخبار آماده‌ای در GitHub وجود ندارد.");
   const validation = validateDigest(digest);
   if (!validation.ok) return sendBotMessage(env, chatId, `بسته خبری معتبر نیست: ${validation.error}`);
-  await queueDigestForReview(digest, env, "admin_preview");
-  await sendBotMessage(env, chatId, `🗞 آخرین بسته خبری\\nشناسه: ${escapeHtml(digest.batch_id)}\\nتعداد خبر: ${digest.stories.length}\\n\\nهر خبر را جداگانه بررسی و تأیید یا رد کن.`, undefined, "HTML");
+  if (adminView) await queueDigestForReview(digest, env, "admin_preview");
+  const intro = adminView
+    ? `🗞 آخرین بسته خبری\\nشناسه: ${escapeHtml(digest.batch_id)}\\nتعداد خبر: ${digest.stories.length}\\n\\nهر خبر را جداگانه بررسی و تأیید یا رد کن.`
+    : `🗞 آخرین خبرهای آماده\\nتعداد خبر: ${digest.stories.length}`;
+  await sendBotMessage(env, chatId, intro, undefined, "HTML");
   for (const story of digest.stories) {
-    const status = await env.DB.prepare("SELECT review_status FROM story_review_queue WHERE story_id = ?").bind(story.id).first();
-    const label = status?.review_status === "approved" ? "تأیید شده" : status?.review_status === "rejected" ? "رد شده" : "در انتظار بررسی";
-    const keyboard = status?.review_status === "pending" ? { inline_keyboard: [[
-      { text: "✅ تأیید و انتشار", callback_data: `approve:${story.id}` },
-      { text: "❌ رد خبر", callback_data: `reject:${story.id}` }
-    ]] } : { inline_keyboard: [[{ text: "↻ به‌روزرسانی فهرست", callback_data: "latest" }]] };
-    const text = `<b>${escapeHtml(story.title)}</b>\\n\\n${escapeHtml(story.summary)}\\n\\n🏷 ${escapeHtml(story.category || "بدون دسته")}\\n📅 ${escapeHtml(story.published_at || "زمان نامشخص")}\\n🔗 <a href="${escapeAttribute(story.source_url)}">مشاهده منبع</a>\\n\\nوضعیت: <b>${label}</b>`;
+    let keyboard;
+    let statusLine = "";
+    if (adminView) {
+      const status = await env.DB.prepare("SELECT review_status FROM story_review_queue WHERE story_id = ?").bind(story.id).first();
+      const label = status?.review_status === "approved" ? "تأیید شده" : status?.review_status === "rejected" ? "رد شده" : "در انتظار بررسی";
+      keyboard = status?.review_status === "pending" ? { inline_keyboard: [[
+        { text: "✅ تأیید و انتشار", callback_data: `approve:${story.id}` },
+        { text: "❌ رد خبر", callback_data: `reject:${story.id}` }
+      ]] } : { inline_keyboard: [[{ text: "↻ به‌روزرسانی فهرست", callback_data: "latest" }]] };
+      statusLine = `\\n\\nوضعیت: <b>${label}</b>`;
+    }
+    const text = `<b>${escapeHtml(story.title)}</b>\\n\\n${escapeHtml(story.summary)}\\n\\n🏷 ${escapeHtml(story.category || "بدون دسته")}\\n📅 ${escapeHtml(story.published_at || "زمان نامشخص")}\\n🔗 <a href="${escapeAttribute(story.source_url)}">مشاهده منبع</a>${statusLine}`;
     await sendBotMessage(env, chatId, text, keyboard, "HTML");
   }
 }
