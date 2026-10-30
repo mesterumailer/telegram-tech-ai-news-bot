@@ -1,6 +1,7 @@
 name = "telegram-tech-ai-news-publisher"
 main = "src/index.js"
 compatibility_date = "2026-10-29"
+keep_vars = true
 
 [triggers]
 # Every 6 hours (UTC). Cron timing is approximate, not a guarantee of exact minute execution.
