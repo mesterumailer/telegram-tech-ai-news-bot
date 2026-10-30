@@ -9,13 +9,13 @@ crons = ["0 */6 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "telegram-news-state"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "9e2851cf-cb66-4c46-b50f-beddc71184ad"
 migrations_dir = "migrations"
 
 [vars]
 PUBLISH_ENABLED = "false"
 TELEGRAM_TEST_ENABLED = "false"
-GITHUB_OWNER = "REPLACE_WITH_OWNER"
-GITHUB_REPO = "REPLACE_WITH_REPO"
+GITHUB_OWNER = "mesterumailer"
+GITHUB_REPO = "telegram-tech-ai-news-bot"
 GITHUB_BRANCH = "main"
 GITHUB_PATH = "content/ready-digest.json"
