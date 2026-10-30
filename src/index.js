@@ -6,6 +6,13 @@ export default {
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ ok: true, service: "telegram-news-publisher", mode: env.PUBLISH_ENABLED === "true" ? "publish" : "dry-run" });
     }
+    if (request.method === "POST" && url.pathname === "/telegram/webhook") {
+      if (!env.TELEGRAM_WEBHOOK_SECRET || request.headers.get("x-telegram-bot-api-secret-token") !== env.TELEGRAM_WEBHOOK_SECRET) return json({ error: "unauthorized webhook" }, 401);
+      let update;
+      try { update = await request.json(); } catch { return json({ error: "invalid update" }, 400); }
+      try { await handleTelegramUpdate(update, env); return json({ ok: true }); }
+      catch (error) { await logEvent(env, "telegram_ui_error", safeError(error)); return json({ ok: false, error: safeError(error) }, 500); }
+    }
     if (request.method === "POST" && url.pathname === "/admin/submit") {
       if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
       let digest;
@@ -42,7 +49,14 @@ export default {
           await logEvent(env, "validation_error", validation.error);
           return;
         }
-        await processDigest(digest, env, "scheduled");
+        const mode = await getSetting(env, "publication_mode", "manual");
+        if (mode === "auto" && env.PUBLISH_ENABLED === "true") {
+          await processDigest(digest, env, "scheduled");
+        } else {
+          await queueDigestForReview(digest, env, "scheduled");
+          if (env.TELEGRAM_ADMIN_USER_ID) await notifyPendingDigest(env, digest);
+          if (mode === "auto" && env.PUBLISH_ENABLED !== "true") await logEvent(env, "auto_publish_paused", "PUBLISH_ENABLED master switch is false");
+        }
       } catch (error) {
         await logEvent(env, "worker_error", safeError(error));
       }
@@ -171,3 +185,170 @@ async function logEvent(env, event, detail) {
 function escapeHtml(value) { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); }
 function escapeAttribute(value) { return escapeHtml(value).replaceAll('"', "&quot;"); }
 function safeError(error) { return String(error?.message || error || "unknown error").slice(0, 500); }
+
+
+async function handleTelegramUpdate(update, env) {
+  const message = update?.message;
+  if (message?.text) {
+    const fromId = String(message.from?.id || "");
+    if (!isAdmin(fromId, env)) return;
+    const chatId = message.chat?.id;
+    if (String(message.chat?.type) !== "private" || !chatId) return;
+    const command = message.text.trim().split(/\\s+/)[0].split("@")[0].toLowerCase();
+    if (command === "/start" || command === "/menu") return sendAdminMenu(env, chatId);
+    if (command === "/latest") return showLatestNews(env, chatId);
+    if (command === "/settings") return showPublicationSettings(env, chatId);
+    return sendBotMessage(env, chatId, "از منوی زیر استفاده کن.", adminMenuKeyboard());
+  }
+
+  const callback = update?.callback_query;
+  if (!callback) return;
+  const userId = String(callback.from?.id || "");
+  if (!isAdmin(userId, env)) {
+    await answerCallback(env, callback.id, "دسترسی غیرمجاز", true);
+    return;
+  }
+  await answerCallback(env, callback.id);
+  const data = String(callback.data || "");
+  const chatId = callback.message?.chat?.id;
+  if (!chatId || String(callback.message?.chat?.type) !== "private") return;
+
+  if (data === "menu") return sendAdminMenu(env, chatId);
+  if (data === "latest") return showLatestNews(env, chatId);
+  if (data === "settings") return showPublicationSettings(env, chatId);
+  if (data === "mode:manual" || data === "mode:auto") {
+    await setSetting(env, "publication_mode", data.slice(5));
+    await logEvent(env, "publication_mode_changed", data.slice(5));
+    return showPublicationSettings(env, chatId, true);
+  }
+  if (data.startsWith("approve:")) return reviewStory(env, chatId, data.slice(8), "approved");
+  if (data.startsWith("reject:")) return reviewStory(env, chatId, data.slice(7), "rejected");
+}
+
+function isAdmin(userId, env) {
+  return Boolean(env.TELEGRAM_ADMIN_USER_ID && userId && userId === String(env.TELEGRAM_ADMIN_USER_ID));
+}
+
+function adminMenuKeyboard() {
+  return { inline_keyboard: [
+    [{ text: "🗞 آخرین اخبار جمع‌آوری‌شده", callback_data: "latest" }],
+    [{ text: "⚙️ تنظیم شیوه انتشار", callback_data: "settings" }]
+  ] };
+}
+
+async function sendAdminMenu(env, chatId) {
+  const mode = await getSetting(env, "publication_mode", "manual");
+  return sendBotMessage(env, chatId, `پنل مدیریت اخبار\\n\\nوضعیت انتشار: ${mode === "auto" ? "خودکار" : "با تأیید مدیر"}\\nکلید اصلی انتشار: ${env.PUBLISH_ENABLED === "true" ? "روشن" : "خاموش"}`, adminMenuKeyboard());
+}
+
+async function showPublicationSettings(env, chatId, changed = false) {
+  const mode = await getSetting(env, "publication_mode", "manual");
+  const text = `⚙️ <b>تنظیم شیوه انتشار</b>\\n\\nحالت فعلی: <b>${mode === "auto" ? "انتشار خودکار" : "انتشار با تأیید مدیر"}</b>\\n\\n${env.PUBLISH_ENABLED === "true" ? "کلید اصلی انتشار روشن است." : "کلید اصلی انتشار خاموش است؛ در این وضعیت هیچ خبری به کانال ارسال نمی‌شود، حتی اگر حالت خودکار انتخاب شود."}${changed ? "\\n\\nتنظیم ذخیره شد." : ""}`;
+  return sendBotMessage(env, chatId, text, { inline_keyboard: [
+    [{ text: mode === "manual" ? "✓ با تأیید مدیر" : "با تأیید مدیر", callback_data: "mode:manual" }],
+    [{ text: mode === "auto" ? "✓ انتشار خودکار" : "انتشار خودکار", callback_data: "mode:auto" }],
+    [{ text: "⬅️ بازگشت", callback_data: "menu" }]
+  ] }, "HTML");
+}
+
+async function showLatestNews(env, chatId) {
+  const digest = await fetchGitHubDigest(env);
+  if (!digest) return sendBotMessage(env, chatId, "هنوز فایل اخبار آماده‌ای در GitHub وجود ندارد.");
+  const validation = validateDigest(digest);
+  if (!validation.ok) return sendBotMessage(env, chatId, `بسته خبری معتبر نیست: ${validation.error}`);
+  await queueDigestForReview(digest, env, "admin_preview");
+  await sendBotMessage(env, chatId, `🗞 آخرین بسته خبری\\nشناسه: ${escapeHtml(digest.batch_id)}\\nتعداد خبر: ${digest.stories.length}\\n\\nهر خبر را جداگانه بررسی و تأیید یا رد کن.`, undefined, "HTML");
+  for (const story of digest.stories) {
+    const status = await env.DB.prepare("SELECT review_status FROM story_review_queue WHERE story_id = ?").bind(story.id).first();
+    const label = status?.review_status === "approved" ? "تأیید شده" : status?.review_status === "rejected" ? "رد شده" : "در انتظار بررسی";
+    const keyboard = status?.review_status === "pending" ? { inline_keyboard: [[
+      { text: "✅ تأیید و انتشار", callback_data: `approve:${story.id}` },
+      { text: "❌ رد خبر", callback_data: `reject:${story.id}` }
+    ]] } : { inline_keyboard: [[{ text: "↻ به‌روزرسانی فهرست", callback_data: "latest" }]] };
+    const text = `<b>${escapeHtml(story.title)}</b>\\n\\n${escapeHtml(story.summary)}\\n\\n🏷 ${escapeHtml(story.category || "بدون دسته")}\\n📅 ${escapeHtml(story.published_at || "زمان نامشخص")}\\n🔗 <a href="${escapeAttribute(story.source_url)}">مشاهده منبع</a>\\n\\nوضعیت: <b>${label}</b>`;
+    await sendBotMessage(env, chatId, text, keyboard, "HTML");
+  }
+}
+
+async function queueDigestForReview(digest, env, origin) {
+  for (const story of digest.stories) {
+    await env.DB.prepare(`INSERT INTO story_review_queue (story_id, batch_id, story_json, review_status, origin, updated_at)
+      VALUES (?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(story_id) DO NOTHING`)
+      .bind(story.id, digest.batch_id, JSON.stringify(story), origin).run();
+  }
+}
+
+async function notifyPendingDigest(env, digest) {
+  const pending = await env.DB.prepare("SELECT COUNT(*) AS count FROM story_review_queue WHERE batch_id = ? AND review_status = 'pending'").bind(digest.batch_id).first();
+  if (!pending?.count) return;
+  await sendBotMessage(env, env.TELEGRAM_ADMIN_USER_ID, `🆕 بسته خبری تازه آماده بررسی است. تعداد خبرهای در انتظار: ${pending.count}`, adminMenuKeyboard());
+}
+
+async function reviewStory(env, chatId, storyId, decision) {
+  const row = await env.DB.prepare("SELECT story_json, review_status FROM story_review_queue WHERE story_id = ?").bind(storyId).first();
+  if (!row) return sendBotMessage(env, chatId, "این خبر در صف بررسی پیدا نشد.");
+  if (row.review_status !== "pending") return sendBotMessage(env, chatId, `این خبر قبلاً تعیین تکلیف شده است: ${row.review_status}`);
+  if (decision === "rejected") {
+    await env.DB.prepare("UPDATE story_review_queue SET review_status='rejected', updated_at=CURRENT_TIMESTAMP WHERE story_id=? AND review_status='pending'").bind(storyId).run();
+    await logEvent(env, "story_rejected", storyId);
+    return sendBotMessage(env, chatId, "خبر رد شد و منتشر نخواهد شد.");
+  }
+  if (env.PUBLISH_ENABLED !== "true") return sendBotMessage(env, chatId, "انتشار فعلاً متوقف است. ابتدا کلید اصلی PUBLISH_ENABLED را در Cloudflare روشن کن؛ تا آن زمان هیچ خبری ارسال نمی‌شود.");
+  const claim = await env.DB.prepare("UPDATE story_review_queue SET review_status='publishing', updated_at=CURRENT_TIMESTAMP WHERE story_id=? AND review_status='pending'").bind(storyId).run();
+  if ((claim.meta?.changes ?? 0) !== 1) return sendBotMessage(env, chatId, "این خبر هم‌زمان توسط درخواست دیگری بررسی شده است.");
+  const story = JSON.parse(row.story_json);
+  try {
+    await publishReviewedStory(env, story);
+    await env.DB.prepare("UPDATE story_review_queue SET review_status='published', updated_at=CURRENT_TIMESTAMP WHERE story_id=?").bind(storyId).run();
+    await logEvent(env, "story_approved_and_published", storyId);
+    return sendBotMessage(env, chatId, `✅ خبر منتشر شد:\\n${escapeHtml(story.title)}`, undefined, "HTML");
+  } catch (error) {
+    await env.DB.prepare("UPDATE story_review_queue SET review_status='pending', updated_at=CURRENT_TIMESTAMP WHERE story_id=?").bind(storyId).run();
+    await logEvent(env, "story_publish_failed", `${storyId}: ${safeError(error)}`);
+    return sendBotMessage(env, chatId, `ارسال انجام نشد: ${escapeHtml(safeError(error))}`, undefined, "HTML");
+  }
+}
+
+async function publishReviewedStory(env, story) {
+  const prior = await env.DB.prepare("SELECT status FROM published_stories WHERE story_id=?").bind(story.id).first();
+  if (prior?.status === "sent") throw new Error("این خبر قبلاً منتشر شده است.");
+  if (prior && prior.status !== "dry_run") throw new Error("وضعیت قبلی خبر نیازمند بررسی دستی است.");
+  await env.DB.prepare(`INSERT INTO published_stories (story_id, source_url, title, status, origin, last_error, updated_at)
+    VALUES (?, ?, ?, 'pending', 'telegram_approval', NULL, CURRENT_TIMESTAMP)
+    ON CONFLICT(story_id) DO UPDATE SET status='pending', origin='telegram_approval', last_error=NULL, updated_at=CURRENT_TIMESTAMP
+    WHERE published_stories.status='dry_run'`)
+    .bind(story.id, story.source_url, story.title).run();
+  await sendTelegram(env, story);
+  await upsertStory(env, story, "sent", "telegram_approval");
+}
+
+async function getSetting(env, key, fallback) {
+  const row = await env.DB.prepare("SELECT setting_value FROM app_settings WHERE setting_key=?").bind(key).first();
+  return row?.setting_value ?? fallback;
+}
+
+async function setSetting(env, key, value) {
+  await env.DB.prepare(`INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value, updated_at=CURRENT_TIMESTAMP`).bind(key, value).run();
+}
+
+async function sendBotMessage(env, chatId, text, replyMarkup, parseMode) {
+  if (!env.TELEGRAM_BOT_TOKEN) throw new Error("Missing TELEGRAM_BOT_TOKEN");
+  const payload = { chat_id: chatId, text, disable_web_page_preview: true };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+  if (parseMode) payload.parse_mode = parseMode;
+  const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(`Telegram send failed with HTTP ${response.status}: ${result.description || "unknown error"}`);
+}
+
+async function answerCallback(env, callbackId, text = "", showAlert = false) {
+  const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ callback_query_id: callbackId, text, show_alert: showAlert })
+  });
+  if (!response.ok) throw new Error(`Telegram callback response failed with HTTP ${response.status}`);
+}
