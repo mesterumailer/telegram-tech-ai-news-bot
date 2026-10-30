@@ -89,7 +89,7 @@ Required Cloudflare setup after deploying this version:
 1. Apply migration `0002_telegram_admin_ui.sql` to the existing D1 database.
 2. Add `TELEGRAM_ADMIN_USER_ID` as a Text variable containing the numeric Telegram user ID of the manager.
 3. Add `TELEGRAM_WEBHOOK_SECRET` as a Secret. Use a random 32+ character value containing only letters, digits, underscores or hyphens.
-4. Register Telegram's webhook URL as `https://telegram-tech-ai-news-publisher.mesterumailer.workers.dev/telegram/webhook`, passing the same webhook secret and allowing `message` and `callback_query` updates.
+4. Call `POST /admin/register-webhook` with `Authorization: Bearer <ADMIN_SECRET>`. This securely registers the Worker URL with Telegram; the bot token is not needed in the PowerShell request.
 5. Keep `PUBLISH_ENABLED=false` while testing the interface. After all tests pass, enable it to allow manual approvals to send; automatic publishing still requires choosing auto mode inside Telegram.
 
 The admin panel is private-chat only. Never put the bot token, admin secret, or webhook secret in GitHub.
