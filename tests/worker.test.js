@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateDigest } from '../src/index.js';
+import worker, { validateDigest } from '../src/index.js';
 
 const stories = [1, 2, 3].map(n => ({
   id: `story-${n}`,
@@ -19,3 +19,16 @@ test('rejects duplicate story ids', () => assert.equal(validateDigest({ ...valid
 test('rejects non-HTTPS source URLs', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: 'http://example.com' }, stories[1], stories[2]] }).ok, false));
 test('rejects a story missing its source URL', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: '' }, stories[1], stories[2]] }).ok, false));
 test('rejects oversized story text', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], summary: 'x'.repeat(2501) }, stories[1], stories[2]] }).ok, false));
+
+test('test-message endpoint rejects requests without admin authorization', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/admin/test-message', { method: 'POST' }), {});
+  assert.equal(response.status, 401);
+});
+
+test('test-message endpoint is disabled unless explicitly enabled', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/admin/test-message', {
+    method: 'POST',
+    headers: { authorization: 'Bearer test-secret' }
+  }), { ADMIN_SECRET: 'test-secret', TELEGRAM_TEST_ENABLED: 'false' });
+  assert.equal(response.status, 403);
+});
