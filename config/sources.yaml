@@ -1,0 +1,19 @@
+# Starter source list. Validate RSS endpoints and licensing/robots terms before production use.
+official:
+  - name: OpenAI News
+    url: https://openai.com/news/rss.xml
+    trust_weight: 1.0
+  - name: Google DeepMind Blog
+    url: https://deepmind.google/blog/rss.xml
+    trust_weight: 1.0
+media:
+  - name: TechCrunch AI
+    url: https://techcrunch.com/category/artificial-intelligence/feed/
+    trust_weight: 0.8
+  - name: The Verge
+    url: https://www.theverge.com/rss/index.xml
+    trust_weight: 0.8
+topics:
+  - ai
+  - technology
+  - tech_business
