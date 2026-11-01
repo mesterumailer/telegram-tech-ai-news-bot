@@ -44,7 +44,8 @@ test('renders proxy URLs only as embedded proxy1 and proxy2 links', () => {
   });
   assert.match(caption, /<a href="https:\/\/t\.me\/ProxyMTProto\/48256">پروکسی1<\/a>/);
   assert.match(caption, /<a href="https:\/\/t\.me\/ProxyMTProto\/48255">پروکسی2<\/a>/);
-  assert.doesNotMatch(caption, /48256|48255/);
+  const visibleText = caption.replace(/<a href="[^"]*">/g, '').replaceAll('</a>', '');
+  assert.doesNotMatch(visibleText, /48256|48255/);
 });
 
 test('rejects non-HTTPS proxy links', () => {
