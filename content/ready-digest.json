@@ -1,40 +1,31 @@
 {
   "batch_id": "2026-11-01-daily-tech-ai-briefing",
-  "generated_at": "2026-11-01T17:45:00Z",
+  "generated_at": "2026-11-01T18:19:13Z",
   "language": "fa",
   "stories": [
     {
-      "id": "deepseek-dsh-superagent-research-prototype-20261101",
-      "title": "دیپ‌سیک نمونه اولیه یک عامل برنامه‌نویسی خودکار را متن‌باز کرد",
-      "summary": "تیم DeepSeek پروژه dsh-superagent را در گیت‌هاب منتشر کرده است؛ نمونه‌ای پژوهشی که می‌تواند درخواست‌های مجاز مرتبط با یک مخزن را دریافت کند، برای هر کار یک نشست اجرایی جدا بسازد و نتیجه را در قالب پاسخ یا Pull Request برگرداند. خود پروژه تأکید می‌کند که این کد نمونه‌ای پژوهشی و نه محصول آماده استفاده عمومی است؛ همچنین اجرای آن به دلیل سطح دسترسی عامل نیازمند محیط ایزوله و حساب اختصاصی است.",
-      "source_url": "https://github.com/deepseek-ai/dsh-superagent-prototype",
-      "category": "هوش مصنوعی و ابزارهای توسعه",
-      "published_at": "2026-11-01T00:00:00Z",
-      "image_url": "https://cassette.sphdigital.com.sg/image/straitstimes/ec97da4fa6110e8c835b009ab73929fe3ac23d384612ce791ca340ab2e8d6ed4?w=1200",
-      "image_credit": "Reuters",
-      "image_alt": "گوشی با نشان DeepSeek روی صفحه‌کلید"
+      "id": "apple-intelligence-qwen-china-beta-nov4-20261031",
+      "title": "اپل زمان عرضه Apple Intelligence در چین را اعلام کرد؛ Qwen به Siri و ابزارهای نوشتاری می‌آید",
+      "summary": "اپل اعلام کرد نخستین قابلیت‌های Apple Intelligence در چین از ۴ نوامبر در نسخه بتای توسعه‌دهندگان آزمایش می‌شوند و همراه iOS 27.3 در دسامبر برای کاربران عرضه خواهند شد. این همکاری امکان استفاده از مدل Qwen علی‌بابا را در برخی تجربه‌های Siri، Writing Tools و Visual Intelligence فراهم می‌کند. اپل تصریح کرده قابلیت‌های نسل بعدی Siri که در WWDC معرفی شدند، در این عرضه گنجانده نشده‌اند؛ زمان‌بندی نیز مربوط به چین است.",
+      "source_url": "https://www.apple.com.cn/newsroom/2026/10/apple-intelligence-features-are-coming-to-users-in-china/",
+      "category": "هوش مصنوعی و محصولات مصرفی",
+      "published_at": "2026-10-31T00:00:00Z"
     },
     {
-      "id": "google-suncatcher-orbital-ai-datacenter-online-20261030",
-      "title": "نمونه آزمایشی مرکز داده فضایی گوگل با پردازنده‌های هوش مصنوعی آنلاین شد",
-      "summary": "پروژه Suncatcher گوگل پس از پرتاب آزمایشی اکنون با زمین ارتباط برقرار می‌کند. ماهواره نمونه چهار پردازنده TPU دارد، اما به دلیل محدودیت انرژی فقط می‌تواند هر بار یکی را روشن کند؛ مدل Gemma 4 نیز روی آن برای آزمایش اجرا شده است. مرحله فعلی بیشتر برای سنجش عملکرد سخت‌افزار در برابر تابش و شرایط حرارتی فضاست و هنوز با یک مرکز داده تجاری فاصله دارد.",
-      "source_url": "https://techcrunch.com/2026/10/30/googles-first-data-center-satellite-is-online-and-writing-poetry/",
-      "category": "هوش مصنوعی و فضا",
-      "published_at": "2026-10-30T17:00:00Z",
-      "image_url": "https://techcrunch.com/wp-content/uploads/2026/10/DSC_0298.jpg?w=1024",
-      "image_credit": "Planet Labs PBC / TechCrunch",
-      "image_alt": "ماهواره‌ای با پنل‌های خورشیدی در محیط آزمایشگاهی"
+      "id": "openai-perturbai-scripps-thousands-agents-brain-cells-20261021",
+      "title": "هزاران عامل هوش مصنوعی داده‌های میلیون‌ها سلول مغزی را در ۳۲ دقیقه تحلیل کردند",
+      "summary": "OpenAI، PerturbAI و Scripps Research گزارش دادند که هزاران عامل مبتنی بر GPT‑Rosalind را به‌صورت موازی برای تحلیل داده‌های آزمایشی میلیون‌ها سلول مغزی موش به‌کار گرفتند. سامانه، ارتباط‌های زیستی احتمالی و سرنخ‌هایی برای پژوهش‌های مرتبط با بیماری‌های عصبی پیشنهاد کرد؛ پژوهشگران می‌گویند این نتایج به اولویت‌بندی آزمایش‌های بعدی کمک می‌کند، اما فرضیه‌های پیشنهادی همچنان به بررسی و آزمایش انسانی نیاز دارند.",
+      "source_url": "https://openai.com/index/scaling-ai-research-for-complex-biological-data/",
+      "category": "پژوهش هوش مصنوعی و زیست‌پزشکی",
+      "published_at": "2026-10-21T00:00:00Z"
     },
     {
-      "id": "nvidia-vera-rubin-bandwidth-spec-revision-20261031",
-      "title": "مشخصات پهنای‌باند حافظه و ارتباطی پلتفرم Vera Rubin انویدیا کاهش یافت",
-      "summary": "بررسی تازه مشخصات منتشرشده انویدیا نشان می‌دهد پهنای‌باند HBM4 هر پردازنده گرافیکی Rubin از ۲۲ به ۱۹٫۲ ترابایت‌برثانیه و پهنای‌باند NVLink 6 از ۳٫۶ به ۳ ترابایت‌برثانیه تغییر کرده است. این ارقام در صفحه مشخصات محصول به‌روزرسانی شده‌اند؛ انویدیا در گزارش TechRadar توضیح عمومی جداگانه‌ای برای این تغییر ارائه نکرده است. بنابراین این خبر درباره اصلاح مشخصات اعلام‌شده است، نه نتیجه یک آزمون مستقل عملکرد.",
-      "source_url": "https://www.techradar.com/pro/nvidia-forced-to-dial-back-key-bandwidth-targets-on-vera-rubin-hardware-tweaks-will-affect-target-specifications-for-memory-and-interconnect-fabric",
-      "category": "سخت‌افزار و تراشه‌های هوش مصنوعی",
-      "published_at": "2026-10-31T00:00:00Z",
-      "image_url": "https://cdn.mos.cms.futurecdn.net/MLH2WqUBs2jRD6pZ52Gdn6.jpg",
-      "image_credit": "Nvidia / TechRadar",
-      "image_alt": "نمای نزدیک تراشه پردازنده گرافیکی Nvidia"
+      "id": "google-deepmind-wri-iiasa-forty-forest-map-20261022",
+      "title": "گوگل و شرکایش نقشه جهانی جنگل‌ها با وضوح ۱۰ متر و دسته‌بندی شش‌گانه منتشر کردند",
+      "summary": "Google DeepMind، Google Research، World Resources Institute و IIASA نقشه ForTy را منتشر کردند که سطح زمین را در قطعات ۱۰×۱۰ متری به شش گروه از جمله جنگل طبیعی، جنگل کاشته‌شده، مزرعه درختی و سایر کاربری‌ها دسته‌بندی می‌کند. مجموعه همراه، تغییرات سالانه جنگل‌ها را از ۲۰۱۷ تا ۲۰۲۵ دنبال می‌کند و می‌تواند به پایش تغییر کاربری و ارزیابی خطر جنگل‌زدایی کمک کند. تیم پژوهش گزارش کرده مدل در ارزیابی بیش از ۹۰۰۰ نقطه، نوع جنگل را در ۹۰٪ موارد درست تشخیص داده است.",
+      "source_url": "https://deepmind.google/blog/beyond-tree-cover-mapping-the-worlds-forest-types/",
+      "category": "هوش مصنوعی و محیط زیست",
+      "published_at": "2026-10-22T00:00:00Z"
     }
   ]
 }
