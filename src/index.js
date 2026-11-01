@@ -201,54 +201,54 @@ function truncateCodePoints(value, maxLength) {
 
 export function buildStoryCaption(story, statusLabel = "") {
   const fixedParts = [
-    \`📰 \${story.title}\`,
+    `📰 ${story.title}`,
     "🔎 منبع خبر"
   ];
-  if (story.category) fixedParts.push(\`🏷 \${story.category}\`);
-  if (story.published_at) fixedParts.push(\`📅 \${story.published_at}\`);
-  if (story.image_credit) fixedParts.push(\`🖼 تصویر: \${story.image_credit}\`);
-  if (statusLabel) fixedParts.push(\`وضعیت: \${statusLabel}\`);
+  if (story.category) fixedParts.push(`🏷 ${story.category}`);
+  if (story.published_at) fixedParts.push(`📅 ${story.published_at}`);
+  if (story.image_credit) fixedParts.push(`🖼 تصویر: ${story.image_credit}`);
+  if (statusLabel) fixedParts.push(`وضعیت: ${statusLabel}`);
 
   const fixedLength = codePointLength(fixedParts.join("\n"));
   const summaryBudget = Math.max(0, 1024 - fixedLength - 2);
   const summary = truncateCodePoints(story.summary, summaryBudget);
   const parts = [
-    \`<b>\${escapeHtml(story.title)}</b>\`,
+    `<b>${escapeHtml(story.title)}</b>`,
     escapeHtml(summary),
-    \`<a href="\${escapeAttribute(story.source_url)}">🔎 منبع خبر</a>\`
+    `<a href="${escapeAttribute(story.source_url)}">🔎 منبع خبر</a>`
   ];
-  if (story.category) parts.push(\`🏷 \${escapeHtml(story.category)}\`);
-  if (story.published_at) parts.push(\`📅 \${escapeHtml(story.published_at)}\`);
-  if (story.image_credit) parts.push(\`🖼 تصویر: \${escapeHtml(story.image_credit)}\`);
-  if (statusLabel) parts.push(\`وضعیت: \${escapeHtml(statusLabel)}\`);
+  if (story.category) parts.push(`🏷 ${escapeHtml(story.category)}`);
+  if (story.published_at) parts.push(`📅 ${escapeHtml(story.published_at)}`);
+  if (story.image_credit) parts.push(`🖼 تصویر: ${escapeHtml(story.image_credit)}`);
+  if (statusLabel) parts.push(`وضعیت: ${escapeHtml(statusLabel)}`);
   return parts.join("\n\n");
 }
 
 function buildStoryText(story, statusLabel = "") {
   const parts = [
-    \`<b>\${escapeHtml(story.title)}</b>\`,
+    `<b>${escapeHtml(story.title)}</b>`,
     escapeHtml(story.summary),
-    \`🔎 <a href="\${escapeAttribute(story.source_url)}">منبع خبر</a>\`
+    `🔎 <a href="${escapeAttribute(story.source_url)}">منبع خبر</a>`
   ];
-  if (story.category) parts.push(\`🏷 \${escapeHtml(story.category)}\`);
-  if (story.published_at) parts.push(\`📅 \${escapeHtml(story.published_at)}\`);
-  if (story.image_credit) parts.push(\`🖼 تصویر: \${escapeHtml(story.image_credit)}\`);
-  if (statusLabel) parts.push(\`وضعیت: <b>\${escapeHtml(statusLabel)}</b>\`);
+  if (story.category) parts.push(`🏷 ${escapeHtml(story.category)}`);
+  if (story.published_at) parts.push(`📅 ${escapeHtml(story.published_at)}`);
+  if (story.image_credit) parts.push(`🖼 تصویر: ${escapeHtml(story.image_credit)}`);
+  if (statusLabel) parts.push(`وضعیت: <b>${escapeHtml(statusLabel)}</b>`);
   return parts.join("\n\n");
 }
 
 export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLabel = "") {
   if (!env.TELEGRAM_BOT_TOKEN || !chatId) throw new Error("Missing Telegram credentials or target chat");
-  const endpoint = \`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}\`;
+  const endpoint = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
   const requestTelegram = async (method, payload) => {
-    const response = await fetch(\`\${endpoint}/\${method}\`, {
+    const response = await fetch(`${endpoint}/${method}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload)
     });
     let result;
     try { result = await response.json(); }
-    catch { throw new Error(\`Telegram \${method} returned an unreadable response (HTTP \${response.status})\`); }
+    catch { throw new Error(`Telegram ${method} returned an unreadable response (HTTP ${response.status})`); }
     return { response, result };
   };
 
@@ -264,9 +264,9 @@ export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLab
     const photoResult = await requestTelegram("sendPhoto", photoPayload);
     if (photoResult.response.ok && photoResult.result?.ok === true) return;
     if (photoResult.result?.ok !== false) {
-      throw new Error(\`Telegram photo send failed with HTTP \${photoResult.response.status}\`);
+      throw new Error(`Telegram photo send failed with HTTP ${photoResult.response.status}`);
     }
-    await logEvent(env, "photo_send_fallback", \`\${story.id}: \${safeError(photoResult.result.description || "Telegram rejected the image")}\`);
+    await logEvent(env, "photo_send_fallback", `${story.id}: ${safeError(photoResult.result.description || "Telegram rejected the image")}`);
   }
 
   const textPayload = {
@@ -278,7 +278,7 @@ export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLab
   if (replyMarkup) textPayload.reply_markup = replyMarkup;
   const textResult = await requestTelegram("sendMessage", textPayload);
   if (!textResult.response.ok || !textResult.result?.ok) {
-    throw new Error(\`Telegram text send failed with HTTP \${textResult.response.status}: \${textResult.result?.description || "unknown error"}\`);
+    throw new Error(`Telegram text send failed with HTTP ${textResult.response.status}: ${textResult.result?.description || "unknown error"}`);
   }
 }
 
@@ -409,8 +409,8 @@ async function showLatestNews(env, chatId, adminView = true) {
       const status = await env.DB.prepare("SELECT review_status FROM story_review_queue WHERE story_id = ?").bind(story.id).first();
       statusLabel = status?.review_status === "approved" ? "تأیید شده" : status?.review_status === "rejected" ? "رد شده" : "در انتظار بررسی";
       keyboard = status?.review_status === "pending" ? { inline_keyboard: [[
-        { text: "✅ تأیید و انتشار", callback_data: \`approve:\${story.id}\` },
-        { text: "❌ رد خبر", callback_data: \`reject:\${story.id}\` }
+        { text: "✅ تأیید و انتشار", callback_data: `approve:${story.id}` },
+        { text: "❌ رد خبر", callback_data: `reject:${story.id}` }
       ]] } : { inline_keyboard: [[{ text: "↻ به‌روزرسانی فهرست", callback_data: "latest" }]] };
     }
     await sendStoryToChat(env, chatId, story, keyboard, statusLabel);
