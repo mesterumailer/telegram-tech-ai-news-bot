@@ -124,6 +124,15 @@ export function validateDigest(digest) {
       } catch { return { ok: false, error: `stories[${i}].image_url is invalid` }; }
     }
     if (s.image_credit !== undefined && (typeof s.image_credit !== "string" || s.image_credit.length > 160)) return { ok: false, error: `stories[${i}].image_credit is invalid` };
+    for (const key of ["proxy1_url", "proxy2_url"]) {
+      if (s[key] !== undefined && s[key] !== null && s[key] !== "") {
+        if (typeof s[key] !== "string" || s[key].length > 2048) return { ok: false, error: `stories[${i}].${key} is invalid` };
+        try {
+          const proxyUrl = new URL(s[key]);
+          if (proxyUrl.protocol !== "https:" || !proxyUrl.hostname || proxyUrl.username || proxyUrl.password) return { ok: false, error: `stories[${i}].${key} must be a public HTTPS URL` };
+        } catch { return { ok: false, error: `stories[${i}].${key} is invalid` }; }
+      }
+    }
     if (s.image_alt !== undefined && (typeof s.image_alt !== "string" || s.image_alt.length > 300)) return { ok: false, error: `stories[${i}].image_alt is invalid` };
     if (s.title.length > 300 || s.summary.length > 2500) return { ok: false, error: `stories[${i}] text is too long` };
   }
@@ -199,29 +208,27 @@ function truncateCodePoints(value, maxLength) {
   return Array.from(String(value)).slice(0, Math.max(0, maxLength)).join("");
 }
 
-export function buildStoryCaption(story, statusLabel = "") {
-  const fixedParts = [
-    `📰 ${story.title}`,
-    "🔎 منبع خبر"
-  ];
-  if (story.category) fixedParts.push(`🏷 ${story.category}`);
-  if (story.published_at) fixedParts.push(`📅 ${story.published_at}`);
-  if (story.image_credit) fixedParts.push(`🖼 تصویر: ${story.image_credit}`);
-  if (statusLabel) fixedParts.push(`وضعیت: ${statusLabel}`);
+function buildProxyLinksHtml(story) {
+  const links = [];
+  for (const [field, label] of [["proxy1_url", "پروکسی1"], ["proxy2_url", "پروکسی2"]]) {
+    if (story[field]) links.push(`<a href="${escapeAttribute(story[field])}">${label}</a>`);
+  }
+  return links.length ? links.join(" | ") : "";
+}
 
-  const fixedLength = codePointLength(fixedParts.join("\n\n"));
-  const summaryBudget = Math.max(0, 1024 - fixedLength - 2);
+export function buildStoryCaption(story, statusLabel = "") {
+  const tail = [
+    `<a href="${escapeAttribute(story.source_url)}">🔎 منبع خبر</a>`,
+    story.category ? `🏷 ${escapeHtml(story.category)}` : "",
+    story.published_at ? `📅 ${escapeHtml(story.published_at)}` : "",
+    story.image_credit ? `🖼 تصویر: ${escapeHtml(story.image_credit)}` : "",
+    statusLabel ? `وضعیت: ${escapeHtml(statusLabel)}` : "",
+    buildProxyLinksHtml(story)
+  ].filter(Boolean);
+  const fixedLength = codePointLength([ `<b>${escapeHtml(story.title)}</b>`, ...tail ].join("\n\n").replace(/<[^>]*>/g, ""));
+  const summaryBudget = Math.max(0, 1024 - fixedLength - 4);
   const summary = truncateCodePoints(story.summary, summaryBudget);
-  const parts = [
-    `<b>${escapeHtml(story.title)}</b>`,
-    escapeHtml(summary),
-    `<a href="${escapeAttribute(story.source_url)}">🔎 منبع خبر</a>`
-  ];
-  if (story.category) parts.push(`🏷 ${escapeHtml(story.category)}`);
-  if (story.published_at) parts.push(`📅 ${escapeHtml(story.published_at)}`);
-  if (story.image_credit) parts.push(`🖼 تصویر: ${escapeHtml(story.image_credit)}`);
-  if (statusLabel) parts.push(`وضعیت: ${escapeHtml(statusLabel)}`);
-  return parts.join("\n\n");
+  return [`<b>${escapeHtml(story.title)}</b>`, escapeHtml(summary), ...tail].join("\n\n");
 }
 
 function buildStoryText(story, statusLabel = "") {
@@ -234,6 +241,8 @@ function buildStoryText(story, statusLabel = "") {
   if (story.published_at) parts.push(`📅 ${escapeHtml(story.published_at)}`);
   if (story.image_credit) parts.push(`🖼 تصویر: ${escapeHtml(story.image_credit)}`);
   if (statusLabel) parts.push(`وضعیت: <b>${escapeHtml(statusLabel)}</b>`);
+  const proxyLinks = buildProxyLinksHtml(story);
+  if (proxyLinks) parts.push(proxyLinks);
   return parts.join("\n\n");
 }
 
