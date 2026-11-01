@@ -199,22 +199,50 @@ function truncateCodePoints(value, maxLength) {
   return Array.from(String(value)).slice(0, Math.max(0, maxLength)).join("");
 }
 
+function extractProxyLinks(summary) {
+  const links = {};
+  const keptLines = [];
+  for (const line of String(summary || "").split(/\r?\n/)) {
+    const match = line.match(/(?:پروکسی|proxy)\s*([12۱۲])\s*[:：-]?\s*(https:\/\/\S+)/i);
+    if (!match) {
+      keptLines.push(line);
+      continue;
+    }
+    const key = ({ "1": "1", "2": "2", "۱": "1", "۲": "2" })[match[1]];
+    try {
+      const url = new URL(match[2].replace(/[),،؛.]+$/, ""));
+      if (url.protocol === "https:" && ["t.me", "telegram.me"].includes(url.hostname.toLowerCase())) links[key] = url.toString();
+      else keptLines.push(line);
+    } catch { keptLines.push(line); }
+  }
+  return { summary: keptLines.join("\n").trim(), links };
+}
+
+function formatSummaryHtml(summary, maxVisibleLength = 2500) {
+  const extracted = extractProxyLinks(summary);
+  const proxyLabels = [];
+  for (const key of ["1", "2"]) {
+    if (extracted.links[key]) proxyLabels.push(`<a href="${escapeAttribute(extracted.links[key])}">پروکسی${key}</a>`);
+  }
+  const proxyTextLength = proxyLabels.length ? proxyLabels.length * 7 + (proxyLabels.length - 1) * 3 : 0;
+  const cleanSummary = truncateCodePoints(extracted.summary, Math.max(0, maxVisibleLength - proxyTextLength));
+  const parts = [];
+  if (cleanSummary) parts.push(escapeHtml(cleanSummary));
+  if (proxyLabels.length) parts.push(proxyLabels.join(" | "));
+  return parts.join("\n\n");
+}
+
 export function buildStoryCaption(story, statusLabel = "") {
-  const fixedParts = [
-    `📰 ${story.title}`,
-    "🔎 منبع خبر"
-  ];
+  const fixedParts = [`📰 ${story.title}`, "🔎 منبع خبر"];
   if (story.category) fixedParts.push(`🏷 ${story.category}`);
   if (story.published_at) fixedParts.push(`📅 ${story.published_at}`);
   if (story.image_credit) fixedParts.push(`🖼 تصویر: ${story.image_credit}`);
   if (statusLabel) fixedParts.push(`وضعیت: ${statusLabel}`);
-
   const fixedLength = codePointLength(fixedParts.join("\n\n"));
   const summaryBudget = Math.max(0, 1024 - fixedLength - 2);
-  const summary = truncateCodePoints(story.summary, summaryBudget);
   const parts = [
     `<b>${escapeHtml(story.title)}</b>`,
-    escapeHtml(summary),
+    formatSummaryHtml(story.summary, summaryBudget),
     `<a href="${escapeAttribute(story.source_url)}">🔎 منبع خبر</a>`
   ];
   if (story.category) parts.push(`🏷 ${escapeHtml(story.category)}`);
@@ -227,7 +255,7 @@ export function buildStoryCaption(story, statusLabel = "") {
 function buildStoryText(story, statusLabel = "") {
   const parts = [
     `<b>${escapeHtml(story.title)}</b>`,
-    escapeHtml(story.summary),
+    formatSummaryHtml(story.summary),
     `🔎 <a href="${escapeAttribute(story.source_url)}">منبع خبر</a>`
   ];
   if (story.category) parts.push(`🏷 ${escapeHtml(story.category)}`);
@@ -236,7 +264,6 @@ function buildStoryText(story, statusLabel = "") {
   if (statusLabel) parts.push(`وضعیت: <b>${escapeHtml(statusLabel)}</b>`);
   return parts.join("\n\n");
 }
-
 export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLabel = "") {
   if (!env.TELEGRAM_BOT_TOKEN || !chatId) throw new Error("Missing Telegram credentials or target chat");
   const endpoint = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
