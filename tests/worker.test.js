@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { validateDigest, sendStoryToChat, buildStoryCaption } from '../src/index.js';
+import worker, { validateDigest, sendStoryToChat, buildStoryCaption, buildStoryReviewKeyboard } from '../src/index.js';
 
 const stories = [1, 2, 3].map(n => ({
   id: `story-${n}`,
@@ -22,7 +22,9 @@ function createReviewDb(story, reviewStatus = 'pending') {
             async first() {
               statements.push({ sql, values, method: 'first' });
               if (sql.includes('FROM story_review_queue')) {
-                return { story_id: story.id, story_json: JSON.stringify(story), review_status: reviewStatus };
+                return values[0] === story.id
+                  ? { story_id: story.id, story_json: JSON.stringify(story), review_status: reviewStatus }
+                  : null;
               }
               if (sql.includes('FROM published_stories')) return null;
               return null;
@@ -275,7 +277,6 @@ test('resolves relative article image metadata and HTML-escaped URL parameters',
 });
 
 test('builds review buttons within Telegram callback_data 64-byte limit for long story IDs', async () => {
-  const { buildStoryReviewKeyboard } = await import('../src/index.js');
   const longStory = { ...stories[0], id: 'openai-perturbai-scripps-thousands-agents-brain-cells-20261021' };
   const keyboard = buildStoryReviewKeyboard(longStory);
   for (const button of keyboard.inline_keyboard[0]) {
@@ -288,6 +289,7 @@ test('builds review buttons within Telegram callback_data 64-byte limit for long
 test('reject button callback updates the review queue and sends an explicit confirmation', async () => {
   const story = { ...stories[1] };
   const DB = createReviewDb(story);
+  const callbackData = buildStoryReviewKeyboard(story).inline_keyboard[0][1].callback_data;
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, options) => {
@@ -301,7 +303,7 @@ test('reject button callback updates the review queue and sends an explicit conf
         'content-type': 'application/json',
         'x-telegram-bot-api-secret-token': 'webhook-secret'
       },
-      body: JSON.stringify(callbackUpdate('reject:short-token'))
+      body: JSON.stringify(callbackUpdate(callbackData))
     }), {
       TELEGRAM_WEBHOOK_SECRET: 'webhook-secret',
       TELEGRAM_ADMIN_USER_ID: '123',
@@ -321,6 +323,7 @@ test('reject button callback updates the review queue and sends an explicit conf
 test('approve button explains the master publish switch when publishing is disabled', async () => {
   const story = { ...stories[1] };
   const DB = createReviewDb(story);
+  const callbackData = buildStoryReviewKeyboard(story).inline_keyboard[0][0].callback_data;
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, options) => {
@@ -334,7 +337,7 @@ test('approve button explains the master publish switch when publishing is disab
         'content-type': 'application/json',
         'x-telegram-bot-api-secret-token': 'webhook-secret'
       },
-      body: JSON.stringify(callbackUpdate('approve:short-token'))
+      body: JSON.stringify(callbackUpdate(callbackData))
     }), {
       TELEGRAM_WEBHOOK_SECRET: 'webhook-secret',
       TELEGRAM_ADMIN_USER_ID: '123',
@@ -346,6 +349,44 @@ test('approve button explains the master publish switch when publishing is disab
     assert.ok(!DB.statements.some(x => x.sql.includes("SET review_status='publishing'")));
     const reply = calls.find(x => x.url.endsWith('/sendMessage'));
     assert.match(reply.payload.text, /PUBLISH_ENABLED/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test('approve button publishes the selected story when the master switch is enabled', async () => {
+  const story = { ...stories[1], image_url: 'https://cdn.example.com/review-story.jpg' };
+  const DB = createReviewDb(story);
+  const callbackData = buildStoryReviewKeyboard(story).inline_keyboard[0][0].callback_data;
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, payload: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/telegram/webhook', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-telegram-bot-api-secret-token': 'webhook-secret'
+      },
+      body: JSON.stringify(callbackUpdate(callbackData))
+    }), {
+      TELEGRAM_WEBHOOK_SECRET: 'webhook-secret',
+      TELEGRAM_ADMIN_USER_ID: '123',
+      TELEGRAM_BOT_TOKEN: 'test-token',
+      TELEGRAM_CHANNEL_ID: '@news-channel',
+      PUBLISH_ENABLED: 'true',
+      DB
+    });
+    assert.equal(response.status, 200);
+    assert.ok(DB.statements.some(x => x.sql.includes("SET review_status='publishing'")));
+    assert.ok(DB.statements.some(x => x.sql.includes("SET review_status='published'")));
+    assert.ok(calls.some(x => x.url.endsWith('/sendPhoto') && x.payload.chat_id === '@news-channel'));
+    const confirmation = calls.find(x => x.url.endsWith('/sendMessage') && /خبر منتشر شد/.test(x.payload.text));
+    assert.ok(confirmation);
   } finally {
     globalThis.fetch = originalFetch;
   }
