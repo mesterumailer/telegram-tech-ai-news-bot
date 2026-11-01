@@ -422,7 +422,13 @@ async function queueDigestForReview(digest, env, origin) {
   for (const story of digest.stories) {
     const result = await env.DB.prepare(`INSERT INTO story_review_queue (story_id, batch_id, story_json, review_status, origin, updated_at)
       VALUES (?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(story_id) DO NOTHING`)
+      ON CONFLICT(story_id) DO UPDATE SET
+        batch_id=excluded.batch_id,
+        story_json=excluded.story_json,
+        origin=excluded.origin,
+        updated_at=CURRENT_TIMESTAMP
+      WHERE story_review_queue.review_status='pending'
+        AND story_review_queue.story_json != excluded.story_json`)
       .bind(story.id, digest.batch_id, JSON.stringify(story), origin).run();
     inserted += result.meta?.changes ?? 0;
   }
