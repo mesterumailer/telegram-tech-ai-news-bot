@@ -209,7 +209,7 @@ export function buildStoryCaption(story, statusLabel = "") {
   if (story.image_credit) fixedParts.push(`🖼 تصویر: ${story.image_credit}`);
   if (statusLabel) fixedParts.push(`وضعیت: ${statusLabel}`);
 
-  const fixedLength = codePointLength(fixedParts.join("\n"));
+  const fixedLength = codePointLength(fixedParts.join("\n\n"));
   const summaryBudget = Math.max(0, 1024 - fixedLength - 2);
   const summary = truncateCodePoints(story.summary, summaryBudget);
   const parts = [
