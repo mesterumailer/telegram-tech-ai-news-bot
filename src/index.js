@@ -407,7 +407,7 @@ async function handleTelegramUpdate(update, env) {
     if (String(message.chat?.type) !== "private" || !chatId) return;
     const fromId = String(message.from?.id || "");
     const admin = isAdmin(fromId, env);
-    const command = message.text.trim().split(/\\s+/)[0].split("@")[0].toLowerCase();
+    const command = message.text.trim().split(/\s+/)[0].split("@")[0].toLowerCase();
 
     if (command === "/start" || command === "/menu") {
       return admin ? sendAdminMenu(env, chatId) : sendPublicMenu(env, chatId);
