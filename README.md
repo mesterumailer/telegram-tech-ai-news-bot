@@ -108,14 +108,3 @@ Required Cloudflare setup after deploying this version:
 5. Keep `PUBLISH_ENABLED=false` while testing the interface. After all tests pass, enable it to allow manual approvals to send; automatic publishing still requires choosing auto mode inside Telegram.
 
 The admin panel is private-chat only. Never put the bot token, admin secret, or webhook secret in GitHub.
-
-
-## پیوست خودکار دو پروکسی MTProto
-
-- پس از انتشار موفق هر سه خبر یک بسته، Worker صفحه عمومی `https://t.me/s/proxyMtProto?before=48257` را در همان لحظه می‌خواند و دو لینک آخرِ یکتا و کامل MTProto را استخراج می‌کند.
-- پروکسی‌ها در یک پیام جداگانه، بلافاصله بعد از سه خبر و با عنوان «پروکسی ۱» و «پروکسی ۲» قرار می‌گیرند؛ لینک‌ها مستقیماً قابل لمس و اتصال در تلگرام هستند.
-- اگر صفحه در دسترس نباشد یا لینک معتبر کافی پیدا نشود، پیام پروکسی ارسال نمی‌شود و انتشار خبرها متوقف نخواهد شد.
-- در حالت بررسی دستی نیز پیوست فقط پس از تعیین تکلیف تمام خبرهای همان بسته و در صورت انتشار حداقل یک خبر ارسال می‌شود.
-- برای جلوگیری از ارسال تکراری، پیوست پروکسی با شناسه همان `batch_id` در D1 ثبت می‌شود.
-- این پروکسی‌ها متعلق به اشخاص ثالث‌اند؛ Worker دسترس‌پذیری یا امنیت آن‌ها را آزمایش و تضمین نمی‌کند. کاربر باید تنها با اعتماد به ارائه‌دهنده از آن‌ها استفاده کند.
-- این قابلیت در Worker مستقرشده فعال نمی‌شود تا زمانی که نسخه جدید کد به‌صورت دستی در Cloudflare deploy شود.
