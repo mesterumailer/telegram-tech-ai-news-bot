@@ -88,8 +88,10 @@ test('renders proxy URLs only as embedded proxy1 and proxy2 links', () => {
   });
   assert.match(caption, /<a href="https:\/\/t\.me\/ProxyMTProto\/48256">پروکسی1<\/a>/);
   assert.match(caption, /<a href="https:\/\/t\.me\/ProxyMTProto\/48255">پروکسی2<\/a>/);
+  assert.match(caption, /<a href="https:\/\/t\.me\/Tech4UsNews">@Tech4UsNews<\/a>/);
   const visibleText = caption.replace(/<a href="[^"]*">/g, '').replaceAll('</a>', '');
   assert.doesNotMatch(visibleText, /48256|48255/);
+  assert.match(visibleText, /@Tech4UsNews/);
 });
 
 test('rejects non-HTTPS proxy links', () => {
@@ -134,6 +136,7 @@ test('sends a story with an image using Telegram sendPhoto and preserves review 
     assert.equal(calls[0].payload.photo, 'https://cdn.example.com/news.jpg');
     assert.deepEqual(calls[0].payload.reply_markup, keyboard);
     assert.equal(calls[0].payload.parse_mode, 'HTML');
+    assert.match(calls[0].payload.caption, /<a href="https:\/\/t\.me\/Tech4UsNews">@Tech4UsNews<\/a>/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -183,17 +186,18 @@ test('does not retry as text after an ambiguous network error on photo send', as
 
 test('sends text-only stories with sendMessage when no image is provided', async () => {
   const originalFetch = globalThis.fetch;
-  const methods = [];
-  globalThis.fetch = async (url) => {
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
     if (String(url).startsWith('https://example.com/story-1')) {
       return new Response('no article image metadata', { status: 404 });
     }
-    methods.push(url.split('/').pop());
+    calls.push({ method: url.split('/').pop(), payload: JSON.parse(options.body) });
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };
   try {
     await sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', stories[0]);
-    assert.deepEqual(methods, ['sendMessage']);
+    assert.deepEqual(calls.map(x => x.method), ['sendMessage']);
+    assert.match(calls[0].payload.text, /<a href="https:\/\/t\.me\/Tech4UsNews">@Tech4UsNews<\/a>/);
   } finally {
     globalThis.fetch = originalFetch;
   }
