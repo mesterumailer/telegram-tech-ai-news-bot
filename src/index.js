@@ -199,7 +199,7 @@ async function processDigest(digest, env, origin) {
 }
 
 export function parseLatestMtprotoProxies(html, limit = 2) {
-  const links = String(html || "").match(/(?:https?:\\/\\/t\\.me\\/proxy|tg:\\/\\/proxy)\\?[^"'<>\\s]+/gi) || [];
+  const links = String(html || "").match(/(?:https?:\/\/t\.me\/proxy|tg:\/\/proxy)\?[^"'<>\s]+/gi) || [];
   const unique = new Map();
 
   for (const rawLink of links) {
@@ -211,7 +211,7 @@ export function parseLatestMtprotoProxies(html, limit = 2) {
       const secret = (parsed.searchParams.get("secret") || "").trim();
       const port = Number(portText);
 
-      if (!server || server.length > 253 || !/^[a-z0-9.:[\\]-]+$/i.test(server) || server.toLowerCase() === "unknown") continue;
+      if (!server || server.length > 253 || !/^[a-z0-9.-]+$/i.test(server) && !/^\[[0-9a-f:]+\]$/i.test(server) || server.toLowerCase() === "unknown") continue;
       if (!Number.isInteger(port) || port < 1 || port > 65535) continue;
       if (!/^[a-z0-9_-]{16,256}={0,2}$/i.test(secret)) continue;
 
@@ -242,7 +242,7 @@ export function buildProxyMessage(proxies) {
     `منبع: <a href="${escapeAttribute(PROXY_SOURCE_URL)}">@proxyMtProto</a>`,
     "⚠️ این پروکسی‌ها متعلق به اشخاص ثالث‌اند؛ فعال‌بودن، سرعت و قابل‌اعتمادبودن آن‌ها تضمین نمی‌شود."
   ];
-  return lines.join("\\n\\n");
+  return lines.join("\n\n");
 }
 
 async function fetchLatestMtprotoProxies() {
