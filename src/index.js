@@ -10,8 +10,31 @@ export default {
       if (!env.TELEGRAM_WEBHOOK_SECRET || request.headers.get("x-telegram-bot-api-secret-token") !== env.TELEGRAM_WEBHOOK_SECRET) return json({ error: "unauthorized webhook" }, 401);
       let update;
       try { update = await request.json(); } catch { return json({ error: "invalid update" }, 400); }
-      try { await handleTelegramUpdate(update, env); return json({ ok: true }); }
-      catch (error) { await logEvent(env, "telegram_ui_error", safeError(error)); return json({ ok: false, error: safeError(error) }, 500); }
+      if (!Number.isSafeInteger(update?.update_id) || update.update_id < 0) {
+        return json({ error: "Telegram update_id is required" }, 400);
+      }
+
+      let claimed;
+      try {
+        claimed = await claimTelegramUpdate(env, update.update_id);
+      } catch (error) {
+        await logEvent(env, "telegram_update_claim_failed", `${update.update_id}: ${safeError(error)}`);
+        return json({ ok: false, error: "could not register Telegram update" }, 500);
+      }
+      if (!claimed) return json({ ok: true, duplicate: true });
+
+      try {
+        await handleTelegramUpdate(update, env);
+        await setTelegramUpdateStatus(env, update.update_id, "processed");
+        return json({ ok: true });
+      } catch (error) {
+        try { await setTelegramUpdateStatus(env, update.update_id, "failed", safeError(error)); }
+        catch (statusError) {
+          await logEvent(env, "telegram_update_status_failed", `${update.update_id}: ${safeError(statusError)}`);
+        }
+        await logEvent(env, "telegram_ui_error", `${update.update_id}: ${safeError(error)}`);
+        return json({ ok: false, error: safeError(error) }, 500);
+      }
     }
     if (request.method === "POST" && url.pathname === "/admin/submit") {
       if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
@@ -89,6 +112,7 @@ export default {
   async scheduled(controller, env, ctx) {
     ctx.waitUntil((async () => {
       try {
+        await pruneTelegramWebhookUpdates(env);
         const digest = await fetchGitHubDigest(env);
         if (!digest) return;
         const validation = validateDigest(digest);
@@ -119,6 +143,26 @@ function authorized(request, env) {
   const expected = env.ADMIN_SECRET;
   if (!expected) return false;
   return request.headers.get("authorization") === `Bearer ${expected}`;
+}
+
+async function claimTelegramUpdate(env, updateId) {
+  const result = await env.DB.prepare(`INSERT INTO telegram_webhook_updates (update_id, status, updated_at)
+    VALUES (?, 'processing', CURRENT_TIMESTAMP)
+    ON CONFLICT(update_id) DO NOTHING`)
+    .bind(updateId).run();
+  return (result.meta?.changes ?? 0) === 1;
+}
+
+async function setTelegramUpdateStatus(env, updateId, status, error = null) {
+  await env.DB.prepare(`UPDATE telegram_webhook_updates
+    SET status = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE update_id = ?`)
+    .bind(status, error, updateId).run();
+}
+
+async function pruneTelegramWebhookUpdates(env) {
+  await env.DB.prepare(`DELETE FROM telegram_webhook_updates
+    WHERE created_at < datetime('now', '-30 days')`).run();
 }
 
 export function validateDigest(digest) {
@@ -418,7 +462,7 @@ async function handleTelegramUpdate(update, env) {
     if (command === "/start" || command === "/menu") {
       return admin ? sendAdminMenu(env, chatId) : sendPublicMenu(env, chatId);
     }
-    if (command === "/latest") return showLatestNews(env, chatId, admin);
+    if (command === "/latest") return showLatestNewsGuarded(env, chatId, admin, update.update_id);
     if (command === "/help") return sendPublicMenu(env, chatId);
     if (command === "/settings") {
       return admin
@@ -439,8 +483,7 @@ async function handleTelegramUpdate(update, env) {
   }
 
   if (data === "public_latest") {
-    await answerCallback(env, callback.id, "در حال دریافت خبرها...");
-    return showLatestNews(env, chatId, false);
+    return showLatestNewsGuarded(env, chatId, false, update.update_id, callback.id);
   }
 
   const userId = String(callback.from?.id || "");
@@ -449,10 +492,13 @@ async function handleTelegramUpdate(update, env) {
     return;
   }
 
+  if (data === "latest") {
+    return showLatestNewsGuarded(env, chatId, true, update.update_id, callback.id);
+  }
+
   await answerCallback(env, callback.id, "درخواست دریافت شد.");
   try {
     if (data === "menu") return await sendAdminMenu(env, chatId);
-    if (data === "latest") return await showLatestNews(env, chatId, true);
     if (data === "settings") return await showPublicationSettings(env, chatId);
     if (data === "mode:manual" || data === "mode:auto") {
       await setSetting(env, "publication_mode", data.slice(5));
@@ -534,6 +580,49 @@ async function showPublicationSettings(env, chatId, changed = false) {
     [{ text: mode === "auto" ? "✓ انتشار خودکار" : "انتشار خودکار", callback_data: "mode:auto" }],
     [{ text: "⬅️ بازگشت", callback_data: "menu" }]
   ] }, "HTML");
+}
+
+const LATEST_VIEW_LOCK_SECONDS = 120;
+const LATEST_VIEW_COOLDOWN_SECONDS = 10;
+
+async function acquireLatestViewLock(env, chatId, updateId) {
+  const result = await env.DB.prepare(`INSERT INTO telegram_latest_view_locks
+      (chat_id, lock_update_id, locked_until, cooldown_until)
+    VALUES (?, ?, unixepoch() + ${LATEST_VIEW_LOCK_SECONDS}, 0)
+    ON CONFLICT(chat_id) DO UPDATE SET
+      lock_update_id = excluded.lock_update_id,
+      locked_until = excluded.locked_until
+    WHERE telegram_latest_view_locks.locked_until <= unixepoch()
+      AND telegram_latest_view_locks.cooldown_until <= unixepoch()`)
+    .bind(String(chatId), updateId).run();
+  return (result.meta?.changes ?? 0) === 1;
+}
+
+async function releaseLatestViewLock(env, chatId, updateId) {
+  await env.DB.prepare(`UPDATE telegram_latest_view_locks
+    SET locked_until = 0, cooldown_until = unixepoch() + ${LATEST_VIEW_COOLDOWN_SECONDS}
+    WHERE chat_id = ? AND lock_update_id = ?`)
+    .bind(String(chatId), updateId).run();
+}
+
+async function showLatestNewsGuarded(env, chatId, adminView, updateId, callbackId = null) {
+  const acquired = await acquireLatestViewLock(env, chatId, updateId);
+  if (!acquired) {
+    if (callbackId) {
+      await answerCallback(env, callbackId, "خبرها همین الان نمایش داده شدند؛ کمی بعد دوباره امتحان کن.");
+    } else {
+      await logEvent(env, "latest_view_throttled", String(chatId));
+    }
+    return;
+  }
+
+  if (callbackId) await answerCallback(env, callbackId, "در حال دریافت آخرین خبرها...");
+  try {
+    await showLatestNews(env, chatId, adminView);
+  } finally {
+    try { await releaseLatestViewLock(env, chatId, updateId); }
+    catch (error) { await logEvent(env, "latest_view_lock_release_failed", safeError(error)); }
+  }
 }
 
 async function showLatestNews(env, chatId, adminView = true) {
