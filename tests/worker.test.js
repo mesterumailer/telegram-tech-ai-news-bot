@@ -63,6 +63,58 @@ function callbackUpdate(data, userId = 123, updateId = 1001) {
   };
 }
 
+function createLatestViewDb() {
+  const processedUpdates = new Set();
+  const locks = new Map();
+  const statements = [];
+  return {
+    statements,
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            async first() {
+              statements.push({ sql, values, method: 'first' });
+              if (sql.includes('SELECT review_status FROM story_review_queue')) {
+                return { review_status: 'pending' };
+              }
+              return null;
+            },
+            async all() {
+              statements.push({ sql, values, method: 'all' });
+              return { results: [] };
+            },
+            async run() {
+              statements.push({ sql, values, method: 'run' });
+              if (sql.includes('INSERT INTO telegram_webhook_updates')) {
+                if (processedUpdates.has(values[0])) return { meta: { changes: 0 } };
+                processedUpdates.add(values[0]);
+                return { meta: { changes: 1 } };
+              }
+              if (sql.includes('INSERT INTO telegram_latest_view_locks')) {
+                const chatId = values[0];
+                const lock = locks.get(chatId);
+                if (lock?.locked || lock?.cooldown) return { meta: { changes: 0 } };
+                locks.set(chatId, { locked: true, lockUpdateId: values[1], cooldown: false });
+                return { meta: { changes: 1 } };
+              }
+              if (sql.includes('UPDATE telegram_latest_view_locks')) {
+                const chatId = values[0];
+                const lock = locks.get(chatId);
+                if (lock && lock.lockUpdateId === values[1]) {
+                  locks.set(chatId, { ...lock, locked: false, cooldown: true });
+                }
+                return { meta: { changes: 1 } };
+              }
+              return { meta: { changes: 1 } };
+            }
+          };
+        }
+      };
+    }
+  };
+}
+
 test('accepts exactly three valid stories with HTTPS sources', () => assert.deepEqual(validateDigest(valid), { ok: true }));
 test('rejects a digest without a batch id', () => assert.equal(validateDigest({ ...valid, batch_id: '' }).ok, false));
 test('rejects fewer than three stories', () => assert.equal(validateDigest({ ...valid, stories: stories.slice(0, 2) }).ok, false));
@@ -370,6 +422,69 @@ test('Telegram webhook processes each update_id only once', async () => {
     assert.equal(DB.processedUpdates.size, 1);
     assert.equal(calls.filter(x => x.url.endsWith('/sendMessage')).length, 1);
     assert.equal(calls.filter(x => x.url.endsWith('/answerCallbackQuery')).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('rapid latest-news button clicks are throttled for the same private chat', async () => {
+  const digest = {
+    batch_id: 'latest-click-test',
+    stories: stories.map((story, index) => ({
+      ...story,
+      image_url: `https://cdn.example.com/story-${index + 1}.jpg`
+    }))
+  };
+  const DB = createLatestViewDb();
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    const urlString = String(url);
+    if (urlString.startsWith('https://api.github.com/')) {
+      return new Response(JSON.stringify({
+        type: 'file',
+        content: Buffer.from(JSON.stringify(digest), 'utf8').toString('base64')
+      }), { status: 200 });
+    }
+    calls.push({ url: urlString, payload: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const env = {
+      TELEGRAM_WEBHOOK_SECRET: 'webhook-secret',
+      TELEGRAM_ADMIN_USER_ID: '123',
+      TELEGRAM_BOT_TOKEN: 'test-token',
+      GITHUB_OWNER: 'owner',
+      GITHUB_REPO: 'repo',
+      GITHUB_BRANCH: 'main',
+      GITHUB_PATH: 'content/ready-digest.json',
+      DB
+    };
+    const sendLatest = async updateId => {
+      const update = callbackUpdate('latest', 123, updateId);
+      update.callback_query.id = `callback-${updateId}`;
+      return worker.fetch(new Request('https://worker.example/telegram/webhook', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-telegram-bot-api-secret-token': 'webhook-secret'
+        },
+        body: JSON.stringify(update)
+      }), env);
+    };
+
+    const first = await sendLatest(9101);
+    const second = await sendLatest(9102);
+
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.equal(calls.filter(x => x.url.endsWith('/sendPhoto')).length, 3);
+    assert.equal(calls.filter(x => x.url.endsWith('/sendMessage') && /آخرین بسته خبری/.test(x.payload.text)).length, 1);
+    const throttledToast = calls.find(x =>
+      x.url.endsWith('/answerCallbackQuery') &&
+      /همین الان نمایش داده شدند/.test(x.payload.text)
+    );
+    assert.ok(throttledToast, 'second click should be acknowledged without sending another news batch');
   } finally {
     globalThis.fetch = originalFetch;
   }
