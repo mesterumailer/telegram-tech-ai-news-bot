@@ -238,6 +238,10 @@ function buildProxyLinksHtml(story) {
   return links.length ? links.join(" | ") : "";
 }
 
+function buildChannelLinkHtml() {
+  return '<a href="https://t.me/Tech4UsNews">@Tech4UsNews</a>';
+}
+
 export function buildStoryCaption(story, statusLabel = "") {
   const tail = [
     `<a href="${escapeAttribute(story.source_url)}">🔎 منبع خبر</a>`,
@@ -245,7 +249,8 @@ export function buildStoryCaption(story, statusLabel = "") {
     story.published_at ? `📅 ${escapeHtml(story.published_at)}` : "",
     story.image_credit ? `🖼 تصویر: ${escapeHtml(story.image_credit)}` : "",
     statusLabel ? `وضعیت: ${escapeHtml(statusLabel)}` : "",
-    buildProxyLinksHtml(story)
+    buildProxyLinksHtml(story),
+    buildChannelLinkHtml()
   ].filter(Boolean);
   const fixedLength = codePointLength([ `<b>${escapeHtml(story.title)}</b>`, ...tail ].join("\n\n").replace(/<[^>]*>/g, ""));
   const summaryBudget = Math.max(0, 1024 - fixedLength - 4);
@@ -265,6 +270,7 @@ function buildStoryText(story, statusLabel = "") {
   if (statusLabel) parts.push(`وضعیت: <b>${escapeHtml(statusLabel)}</b>`);
   const proxyLinks = buildProxyLinksHtml(story);
   if (proxyLinks) parts.push(proxyLinks);
+  parts.push(buildChannelLinkHtml());
   return parts.join("\n\n");
 }
 
