@@ -616,8 +616,8 @@ async function showLatestNewsGuarded(env, chatId, adminView, updateId, callbackI
     return;
   }
 
-  if (callbackId) await answerCallback(env, callbackId, "در حال دریافت آخرین خبرها...");
   try {
+    if (callbackId) await answerCallback(env, callbackId, "در حال دریافت آخرین خبرها...");
     await showLatestNews(env, chatId, adminView);
   } finally {
     try { await releaseLatestViewLock(env, chatId, updateId); }
