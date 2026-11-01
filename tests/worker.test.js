@@ -179,7 +179,7 @@ test('renders proxy URLs as compact clickable labels and hides raw URLs', async 
       '@test-channel',
       {
         ...stories[0],
-        summary: 'خلاصه خبر\\n🔐 پروکسی ۱: https://t.me/ProxyMTProto/48256\\n🔐 پروکسی ۲: https://t.me/ProxyMTProto/48255'
+        summary: 'خلاصه خبر\n🔐 پروکسی ۱: https://t.me/ProxyMTProto/48256\n🔐 پروکسی ۲: https://t.me/ProxyMTProto/48255'
       }
     );
     assert.match(payload.text, /<a href="https:\/\/t\.me\/ProxyMTProto\/48256">پروکسی1<\/a>/);
