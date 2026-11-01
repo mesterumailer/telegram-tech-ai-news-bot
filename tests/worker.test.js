@@ -141,6 +141,9 @@ test('sends text-only stories with sendMessage when no image is provided', async
   const originalFetch = globalThis.fetch;
   const methods = [];
   globalThis.fetch = async (url) => {
+    if (String(url).startsWith('https://example.com/story-1')) {
+      return new Response('no article image metadata', { status: 404 });
+    }
     methods.push(url.split('/').pop());
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };
@@ -182,4 +185,49 @@ test('Telegram webhook rejects an incorrect secret', async () => {
     body: JSON.stringify({ update_id: 1, message: { text: '/start' } })
   }), { TELEGRAM_WEBHOOK_SECRET: 'webhook-secret' });
   assert.equal(response.status, 401);
+});
+
+
+test('discovers an article og:image and sends the story with sendPhoto when image_url is missing', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    if (String(url).startsWith('https://example.com/story-1')) {
+      return new Response('<html><head><meta property="og:image" content="https://cdn.example.com/story-photo.jpg"></head></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8' }
+      });
+    }
+    calls.push({ url, payload: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    await sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', stories[0]);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].url, /\/sendPhoto$/);
+    assert.equal(calls[0].payload.photo, 'https://cdn.example.com/story-photo.jpg');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('resolves relative article image metadata and HTML-escaped URL parameters', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    if (String(url).startsWith('https://example.com/story-1')) {
+      return new Response('<meta property="og:image" content="/assets/news.jpg?size=large&amp;format=jpg">', {
+        status: 200,
+        headers: { 'content-type': 'text/html' }
+      });
+    }
+    calls.push({ url, payload: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    await sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', stories[0]);
+    assert.equal(calls[0].payload.photo, 'https://example.com/assets/news.jpg?size=large&format=jpg');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
