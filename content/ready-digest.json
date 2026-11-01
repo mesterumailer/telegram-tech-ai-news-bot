@@ -9,7 +9,10 @@
       "summary": "تیم DeepSeek پروژه dsh-superagent را در گیت‌هاب منتشر کرده است؛ نمونه‌ای پژوهشی که می‌تواند درخواست‌های مجاز مرتبط با یک مخزن را دریافت کند، برای هر کار یک نشست اجرایی جدا بسازد و نتیجه را در قالب پاسخ یا Pull Request برگرداند. خود پروژه تأکید می‌کند که این کد نمونه‌ای پژوهشی و نه محصول آماده استفاده عمومی است؛ همچنین اجرای آن به دلیل سطح دسترسی عامل نیازمند محیط ایزوله و حساب اختصاصی است.",
       "source_url": "https://github.com/deepseek-ai/dsh-superagent-prototype",
       "category": "هوش مصنوعی و ابزارهای توسعه",
-      "published_at": "2026-11-01T00:00:00Z"
+      "published_at": "2026-11-01T00:00:00Z",
+      "image_url": "https://cassette.sphdigital.com.sg/image/straitstimes/ec97da4fa6110e8c835b009ab73929fe3ac23d384612ce791ca340ab2e8d6ed4?w=1200",
+      "image_credit": "Reuters",
+      "image_alt": "گوشی با نشان DeepSeek روی صفحه‌کلید"
     },
     {
       "id": "google-suncatcher-orbital-ai-datacenter-online-20261030",
@@ -17,7 +20,10 @@
       "summary": "پروژه Suncatcher گوگل پس از پرتاب آزمایشی اکنون با زمین ارتباط برقرار می‌کند. ماهواره نمونه چهار پردازنده TPU دارد، اما به دلیل محدودیت انرژی فقط می‌تواند هر بار یکی را روشن کند؛ مدل Gemma 4 نیز روی آن برای آزمایش اجرا شده است. مرحله فعلی بیشتر برای سنجش عملکرد سخت‌افزار در برابر تابش و شرایط حرارتی فضاست و هنوز با یک مرکز داده تجاری فاصله دارد.",
       "source_url": "https://techcrunch.com/2026/10/30/googles-first-data-center-satellite-is-online-and-writing-poetry/",
       "category": "هوش مصنوعی و فضا",
-      "published_at": "2026-10-30T17:00:00Z"
+      "published_at": "2026-10-30T17:00:00Z",
+      "image_url": "https://techcrunch.com/wp-content/uploads/2026/10/DSC_0298.jpg?w=1024",
+      "image_credit": "Planet Labs PBC / TechCrunch",
+      "image_alt": "ماهواره‌ای با پنل‌های خورشیدی در محیط آزمایشگاهی"
     },
     {
       "id": "nvidia-vera-rubin-bandwidth-spec-revision-20261031",
@@ -25,7 +31,10 @@
       "summary": "بررسی تازه مشخصات منتشرشده انویدیا نشان می‌دهد پهنای‌باند HBM4 هر پردازنده گرافیکی Rubin از ۲۲ به ۱۹٫۲ ترابایت‌برثانیه و پهنای‌باند NVLink 6 از ۳٫۶ به ۳ ترابایت‌برثانیه تغییر کرده است. این ارقام در صفحه مشخصات محصول به‌روزرسانی شده‌اند؛ انویدیا در گزارش TechRadar توضیح عمومی جداگانه‌ای برای این تغییر ارائه نکرده است. بنابراین این خبر درباره اصلاح مشخصات اعلام‌شده است، نه نتیجه یک آزمون مستقل عملکرد.",
       "source_url": "https://www.techradar.com/pro/nvidia-forced-to-dial-back-key-bandwidth-targets-on-vera-rubin-hardware-tweaks-will-affect-target-specifications-for-memory-and-interconnect-fabric",
       "category": "سخت‌افزار و تراشه‌های هوش مصنوعی",
-      "published_at": "2026-10-31T00:00:00Z"
+      "published_at": "2026-10-31T00:00:00Z",
+      "image_url": "https://cdn.mos.cms.futurecdn.net/MLH2WqUBs2jRD6pZ52Gdn6.jpg",
+      "image_credit": "Nvidia / TechRadar",
+      "image_alt": "نمای نزدیک تراشه پردازنده گرافیکی Nvidia"
     }
   ]
 }
