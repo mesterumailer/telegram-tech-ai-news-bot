@@ -381,6 +381,8 @@ export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLab
       throw new Error(`Telegram photo send failed with HTTP ${photoResult.response.status}`);
     }
     await logEvent(env, "photo_send_fallback", `${story.id}: ${safeError(photoResult.result.description || "Telegram rejected the image")}`);
+  } else {
+    await logEvent(env, "image_not_found", `${story.id}: no direct image_url or supported article image metadata`);
   }
 
   const textPayload = {
