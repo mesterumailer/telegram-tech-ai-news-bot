@@ -123,6 +123,11 @@ export function validateDigest(digest) {
         if (imageUrl.protocol !== "https:" || !imageUrl.hostname || imageUrl.username || imageUrl.password) return { ok: false, error: `stories[${i}].image_url must be a public HTTPS URL` };
       } catch { return { ok: false, error: `stories[${i}].image_url is invalid` }; }
     }
+    for (const key of ["proxy1_url", "proxy2_url"]) {
+      if (s[key] !== undefined && s[key] !== null && s[key] !== "") {
+        if (typeof s[key] !== "string" || !isTelegramProxyUrl(s[key])) return { ok: false, error: `stories[${i}].${key} must be a valid Telegram HTTPS proxy URL` };
+      }
+    }
     if (s.image_credit !== undefined && (typeof s.image_credit !== "string" || s.image_credit.length > 160)) return { ok: false, error: `stories[${i}].image_credit is invalid` };
     if (s.image_alt !== undefined && (typeof s.image_alt !== "string" || s.image_alt.length > 300)) return { ok: false, error: `stories[${i}].image_alt is invalid` };
     if (s.title.length > 300 || s.summary.length > 2500) return { ok: false, error: `stories[${i}] text is too long` };
@@ -199,8 +204,24 @@ function truncateCodePoints(value, maxLength) {
   return Array.from(String(value)).slice(0, Math.max(0, maxLength)).join("");
 }
 
-function extractProxyLinks(summary) {
+function isTelegramProxyUrl(value) {
+  try {
+    const url = new URL(String(value).trim());
+    return url.protocol === "https:"
+      && ["t.me", "telegram.me"].includes(url.hostname.toLowerCase())
+      && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+function extractProxyLinks(summary, story = {}) {
   const links = {};
+  for (const key of ["1", "2"]) {
+    const direct = story[`proxy${key}_url`];
+    if (direct && isTelegramProxyUrl(direct)) links[key] = new URL(direct).toString();
+  }
+
   const keptLines = [];
   for (const line of String(summary || "").split(/\r?\n/)) {
     const match = line.match(/(?:پروکسی|proxy)\s*([12۱۲])\s*[:：-]?\s*(https:\/\/\S+)/i);
@@ -209,17 +230,18 @@ function extractProxyLinks(summary) {
       continue;
     }
     const key = ({ "1": "1", "2": "2", "۱": "1", "۲": "2" })[match[1]];
-    try {
-      const url = new URL(match[2].replace(/[),،؛.]+$/, ""));
-      if (url.protocol === "https:" && ["t.me", "telegram.me"].includes(url.hostname.toLowerCase())) links[key] = url.toString();
-      else keptLines.push(line);
-    } catch { keptLines.push(line); }
+    const candidate = match[2].replace(/[),،؛.]+$/, "");
+    if (isTelegramProxyUrl(candidate)) {
+      if (!links[key]) links[key] = new URL(candidate).toString();
+    } else {
+      keptLines.push(line);
+    }
   }
   return { summary: keptLines.join("\n").trim(), links };
 }
 
-function formatSummaryHtml(summary, maxVisibleLength = 2500) {
-  const extracted = extractProxyLinks(summary);
+function formatSummaryHtml(summary, maxVisibleLength = 2500, story = {}) {
+  const extracted = extractProxyLinks(summary, story);
   const proxyLabels = [];
   for (const key of ["1", "2"]) {
     if (extracted.links[key]) proxyLabels.push(`<a href="${escapeAttribute(extracted.links[key])}">پروکسی${key}</a>`);
@@ -242,7 +264,7 @@ export function buildStoryCaption(story, statusLabel = "") {
   const summaryBudget = Math.max(0, 1024 - fixedLength - 2);
   const parts = [
     `<b>${escapeHtml(story.title)}</b>`,
-    formatSummaryHtml(story.summary, summaryBudget),
+    formatSummaryHtml(story.summary, summaryBudget, story),
     `<a href="${escapeAttribute(story.source_url)}">🔎 منبع خبر</a>`
   ];
   if (story.category) parts.push(`🏷 ${escapeHtml(story.category)}`);
@@ -255,7 +277,7 @@ export function buildStoryCaption(story, statusLabel = "") {
 function buildStoryText(story, statusLabel = "") {
   const parts = [
     `<b>${escapeHtml(story.title)}</b>`,
-    formatSummaryHtml(story.summary),
+    formatSummaryHtml(story.summary, 2500, story),
     `🔎 <a href="${escapeAttribute(story.source_url)}">منبع خبر</a>`
   ];
   if (story.category) parts.push(`🏷 ${escapeHtml(story.category)}`);
@@ -264,6 +286,61 @@ function buildStoryText(story, statusLabel = "") {
   if (statusLabel) parts.push(`وضعیت: <b>${escapeHtml(statusLabel)}</b>`);
   return parts.join("\n\n");
 }
+
+function decodeHtmlEntities(value) {
+  return String(value)
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+function readHtmlAttribute(tag, name) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLabel = "") {");
+  const match = tag.match(new RegExp(`(?:^|\\s)${escapedName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"));
+  return match ? decodeHtmlEntities(match[1] ?? match[2] ?? match[3] ?? "") : "";
+}
+
+function findPageImage(html) {
+  const candidates = [];
+  for (const tag of String(html).match(/<meta\\b[^>]*>/gi) || []) {
+    const key = (readHtmlAttribute(tag, "property") || readHtmlAttribute(tag, "name") || readHtmlAttribute(tag, "itemprop")).toLowerCase();
+    if (["og:image", "og:image:url", "og:image:secure_url", "twitter:image", "twitter:image:src", "image"].includes(key)) {
+      const content = readHtmlAttribute(tag, "content");
+      if (content) candidates.push(content);
+    }
+  }
+  return candidates[0] || "";
+}
+
+async function resolveStoryImageUrl(story) {
+  if (story.image_url) return story.image_url;
+  try {
+    const source = new URL(story.source_url);
+    if (source.protocol !== "https:") return null;
+    const response = await fetch(source.toString(), {
+      headers: {
+        "accept": "text/html,application/xhtml+xml",
+        "user-agent": "Mozilla/5.0 (compatible; TelegramNewsPublisher/1.0)"
+      },
+      redirect: "follow"
+    });
+    if (!response.ok) return null;
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType && !/text\\/html|application\\/xhtml\\+xml/i.test(contentType)) return null;
+    const html = (await response.text()).slice(0, 1_000_000);
+    const candidate = findPageImage(html);
+    if (!candidate) return null;
+    const imageUrl = new URL(candidate, response.url || source.toString());
+    if (imageUrl.protocol !== "https:" || !imageUrl.hostname || imageUrl.username || imageUrl.password) return null;
+    if (["localhost", "127.0.0.1", "::1"].includes(imageUrl.hostname.toLowerCase())) return null;
+    return imageUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLabel = "") {
   if (!env.TELEGRAM_BOT_TOKEN || !chatId) throw new Error("Missing Telegram credentials or target chat");
   const endpoint = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
@@ -279,10 +356,11 @@ export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLab
     return { response, result };
   };
 
-  if (story.image_url) {
+  const resolvedImageUrl = await resolveStoryImageUrl(story);
+  if (resolvedImageUrl) {
     const photoPayload = {
       chat_id: chatId,
-      photo: story.image_url,
+      photo: resolvedImageUrl,
       caption: buildStoryCaption(story, statusLabel),
       parse_mode: "HTML",
       disable_notification: false
