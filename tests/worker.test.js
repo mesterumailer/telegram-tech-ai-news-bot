@@ -23,7 +23,7 @@ test('extracts the two newest unique valid MTProto links in page order', () => {
   const proxies = parseLatestMtprotoProxies(html);
   assert.deepEqual(proxies.map(proxy => proxy.server), ['middle.example', 'latest.example']);
   assert.equal(proxies[1].port, 88);
-  assert.match(proxies[1].url, /^https:\\/\\/t\\.me\\/proxy\\?/);
+  assert.match(proxies[1].url, /^https:\/\/t\.me\/proxy\?/);
 });
 
 test('ignores malformed or incomplete MTProto links', () => {
