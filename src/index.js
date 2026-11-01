@@ -581,7 +581,7 @@ async function notifyPendingDigest(env, digest) {
 async function findReviewQueueRow(env, storyRef) {
   const direct = await env.DB.prepare("SELECT story_id, story_json, review_status FROM story_review_queue WHERE story_id = ?").bind(storyRef).first();
   if (direct) return direct;
-  const result = await env.DB.prepare("SELECT story_id, story_json, review_status FROM story_review_queue").all();
+  const result = await env.DB.prepare("SELECT story_id, story_json, review_status FROM story_review_queue").bind().all();
   const matches = (result.results || []).filter(row => storyCallbackToken(row.story_id) === storyRef);
   if (matches.length > 1) throw new Error("شناسهٔ دکمه تکراری است؛ فهرست خبرها را تازه‌سازی کن.");
   return matches[0] || null;
