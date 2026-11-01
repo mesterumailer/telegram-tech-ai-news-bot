@@ -209,3 +209,74 @@ test('keeps non-Telegram proxy URLs visible rather than turning them into links'
     globalThis.fetch = originalFetch;
   }
 });
+
+test('renders structured proxy1_url and proxy2_url fields as compact clickable labels', async () => {
+  const originalFetch = globalThis.fetch;
+  let payload;
+  globalThis.fetch = async (_url, options) => {
+    payload = JSON.parse(options.body);
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    await sendStoryToChat(
+      { TELEGRAM_BOT_TOKEN: 'test-token' },
+      '@test-channel',
+      {
+        ...stories[0],
+        proxy1_url: 'https://t.me/ProxyMTProto/48256',
+        proxy2_url: 'https://t.me/ProxyMTProto/48255'
+      }
+    );
+    assert.match(payload.text, /<a href="https:\/\/t\.me\/ProxyMTProto\/48256">پروکسی1<\/a>/);
+    assert.match(payload.text, /<a href="https:\/\/t\.me\/ProxyMTProto\/48255">پروکسی2<\/a>/);
+    assert.doesNotMatch(payload.text, /ProxyMTProto\/4825[56]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('discovers an article og:image and sends the news with sendPhoto when image_url is missing', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    if (String(url).startsWith('https://example.com/story-1')) {
+      return new Response('<html><head><meta property="og:image" content="https://cdn.example.com/story-photo.jpg"></head></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8' }
+      });
+    }
+    calls.push({ url, payload: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    await sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', stories[0]);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].url, /\/sendPhoto$/);
+    assert.equal(calls[0].payload.photo, 'https://cdn.example.com/story-photo.jpg');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('supports relative og:image URLs and HTML-escaped ampersands', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    if (String(url).startsWith('https://example.com/story-1')) {
+      const response = new Response('<meta property="og:image" content="/images/news.jpg?a=1&amp;b=2">', {
+        status: 200,
+        headers: { 'content-type': 'text/html' }
+      });
+      Object.defineProperty(response, 'url', { value: 'https://example.com/story-1' });
+      return response;
+    }
+    calls.push({ url, payload: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    await sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', stories[0]);
+    assert.equal(calls[0].payload.photo, 'https://example.com/images/news.jpg?a=1&b=2');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
