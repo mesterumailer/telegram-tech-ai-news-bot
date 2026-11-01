@@ -1,5 +1,4 @@
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
-const PROXY_SOURCE_URL = "https://t.me/s/proxyMtProto?before=48257";
 
 export default {
   async fetch(request, env, ctx) {
@@ -190,126 +189,8 @@ async function processDigest(digest, env, origin) {
     }
   }
   const ok = outcomes.every(x => ["sent", "dry_run", "duplicate_skipped"].includes(x.status));
-  let proxyFooter = { status: "not_attempted" };
-  if (env.PUBLISH_ENABLED === "true" && outcomes.every(x => ["sent", "duplicate_skipped"].includes(x.status))) {
-    proxyFooter = await maybePublishProxyFooter(env, digest.batch_id, origin, false);
-  }
-  await logEvent(env, ok ? "digest_processed" : "digest_partial_failure", JSON.stringify({ batch_id: digest.batch_id, origin, outcomes, proxyFooter }));
-  return { ok, batch_id: digest.batch_id, outcomes, proxy_footer: proxyFooter };
-}
-
-export function parseLatestMtprotoProxies(html, limit = 2) {
-  const links = String(html || "").match(/(?:https?:\/\/t\.me\/proxy|tg:\/\/proxy)\?[^"'<>\s]+/gi) || [];
-  const unique = new Map();
-
-  for (const rawLink of links) {
-    try {
-      const decodedLink = rawLink.replace(/&amp;/gi, "&").replace(/&#0*38;/gi, "&").replace(/&#x0*26;/gi, "&");
-      const parsed = new URL(decodedLink);
-      const server = (parsed.searchParams.get("server") || "").trim();
-      const portText = parsed.searchParams.get("port") || "";
-      const secret = (parsed.searchParams.get("secret") || "").trim();
-      const port = Number(portText);
-
-      if (!server || server.length > 253 || !/^[a-z0-9.-]+$/i.test(server) && !/^\[[0-9a-f:]+\]$/i.test(server) || server.toLowerCase() === "unknown") continue;
-      if (!Number.isInteger(port) || port < 1 || port > 65535) continue;
-      if (!/^[a-z0-9_-]{16,256}={0,2}$/i.test(secret)) continue;
-
-      const key = `${server.toLowerCase()}:${port}:${secret}`;
-      const connectUrl = new URL("https://t.me/proxy");
-      connectUrl.searchParams.set("server", server);
-      connectUrl.searchParams.set("port", String(port));
-      connectUrl.searchParams.set("secret", secret);
-      unique.delete(key);
-      unique.set(key, { server, port, secret, url: connectUrl.toString() });
-    } catch {
-      // Ignore malformed or non-proxy links from the public channel page.
-    }
-  }
-
-  const count = Math.max(1, Math.min(10, Number.isInteger(limit) ? limit : 2));
-  return Array.from(unique.values()).slice(-count);
-}
-
-export function buildProxyMessage(proxies) {
-  if (!Array.isArray(proxies) || proxies.length === 0) return "";
-  const labels = ["۱", "۲"];
-  const lines = [
-    "<b>🔐 دو پروکسی آخر تلگرام</b>",
-    ...proxies.slice(0, 2).map((proxy, index) =>
-      `${index + 1}. <a href="${escapeAttribute(proxy.url)}">پروکسی ${labels[index] || index + 1} — ${escapeHtml(proxy.server)}:${proxy.port}</a>`
-    ),
-    `منبع: <a href="${escapeAttribute(PROXY_SOURCE_URL)}">@proxyMtProto</a>`,
-    "⚠️ این پروکسی‌ها متعلق به اشخاص ثالث‌اند؛ فعال‌بودن، سرعت و قابل‌اعتمادبودن آن‌ها تضمین نمی‌شود."
-  ];
-  return lines.join("\n\n");
-}
-
-async function fetchLatestMtprotoProxies() {
-  const response = await fetch(PROXY_SOURCE_URL, {
-    headers: { "accept": "text/html", "user-agent": "Mozilla/5.0 (compatible; TelegramNewsPublisher/1.0)" },
-    cf: { cacheTtl: 0, cacheEverything: false }
-  });
-  if (!response.ok) throw new Error(`Proxy source returned HTTP ${response.status}`);
-  const html = await response.text();
-  if (html.length > 2_000_000) throw new Error("Proxy source page is unexpectedly large");
-  return parseLatestMtprotoProxies(html, 2);
-}
-
-async function maybePublishProxyFooter(env, batchId, origin, requireReviewComplete) {
-  try {
-    if (env.PUBLISH_ENABLED !== "true" || !batchId) return { status: "paused" };
-
-    if (requireReviewComplete) {
-      const reviewState = await env.DB.prepare(`SELECT
-        SUM(CASE WHEN review_status IN ('pending', 'publishing') THEN 1 ELSE 0 END) AS open_count,
-        SUM(CASE WHEN review_status = 'published' THEN 1 ELSE 0 END) AS published_count
-        FROM story_review_queue WHERE batch_id = ?`).bind(batchId).first();
-      if ((reviewState?.open_count ?? 0) > 0 || (reviewState?.published_count ?? 0) === 0) {
-        return { status: "waiting_for_review" };
-      }
-    }
-
-    const proxyStory = {
-      id: `proxy-footer:${batchId}`,
-      title: "پیوست پروکسی‌های تلگرام",
-      source_url: PROXY_SOURCE_URL
-    };
-    const prior = await env.DB.prepare("SELECT status FROM published_stories WHERE story_id = ?").bind(proxyStory.id).first();
-    if (prior?.status === "sent") return { status: "duplicate_skipped" };
-    if (prior && prior.status !== "dry_run") return { status: "manual_review_required" };
-
-    const proxies = await fetchLatestMtprotoProxies();
-    if (!proxies.length) {
-      await logEvent(env, "proxy_footer_unavailable", `No valid MTProto proxy links found for ${batchId}`);
-      return { status: "not_available" };
-    }
-
-    const claim = await env.DB.prepare(`INSERT INTO published_stories
-      (story_id, source_url, title, status, origin, last_error, updated_at)
-      VALUES (?, ?, ?, 'pending', ?, NULL, CURRENT_TIMESTAMP)
-      ON CONFLICT(story_id) DO UPDATE SET status='pending', origin=excluded.origin,
-      last_error=NULL, updated_at=CURRENT_TIMESTAMP
-      WHERE published_stories.status='dry_run'`)
-      .bind(proxyStory.id, proxyStory.source_url, proxyStory.title, `${origin}_proxy_footer`).run();
-    if ((claim.meta?.changes ?? 0) !== 1) {
-      const latest = await env.DB.prepare("SELECT status FROM published_stories WHERE story_id = ?").bind(proxyStory.id).first();
-      return { status: latest?.status === "sent" ? "duplicate_skipped" : "manual_review_required" };
-    }
-
-    try {
-      await sendBotMessage(env, env.TELEGRAM_CHANNEL_ID, buildProxyMessage(proxies), undefined, "HTML");
-      await upsertStory(env, proxyStory, "sent", `${origin}_proxy_footer`);
-      return { status: "sent", count: proxies.length };
-    } catch (error) {
-      await upsertStory(env, proxyStory, "failed", `${origin}_proxy_footer`, safeError(error));
-      await logEvent(env, "proxy_footer_send_failed", `${batchId}: ${safeError(error)}`);
-      return { status: "failed" };
-    }
-  } catch (error) {
-    await logEvent(env, "proxy_footer_error", `${batchId}: ${safeError(error)}`);
-    return { status: "unavailable" };
-  }
+  await logEvent(env, ok ? "digest_processed" : "digest_partial_failure", JSON.stringify({ batch_id: digest.batch_id, origin, outcomes }));
+  return { ok, batch_id: digest.batch_id, outcomes };
 }
 
 function codePointLength(value) { return Array.from(String(value)).length; }
@@ -561,13 +442,12 @@ async function notifyPendingDigest(env, digest) {
 }
 
 async function reviewStory(env, chatId, storyId, decision) {
-  const row = await env.DB.prepare("SELECT story_json, review_status, batch_id FROM story_review_queue WHERE story_id = ?").bind(storyId).first();
+  const row = await env.DB.prepare("SELECT story_json, review_status FROM story_review_queue WHERE story_id = ?").bind(storyId).first();
   if (!row) return sendBotMessage(env, chatId, "این خبر در صف بررسی پیدا نشد.");
   if (row.review_status !== "pending") return sendBotMessage(env, chatId, `این خبر قبلاً تعیین تکلیف شده است: ${row.review_status}`);
   if (decision === "rejected") {
     await env.DB.prepare("UPDATE story_review_queue SET review_status='rejected', updated_at=CURRENT_TIMESTAMP WHERE story_id=? AND review_status='pending'").bind(storyId).run();
     await logEvent(env, "story_rejected", storyId);
-    await maybePublishProxyFooter(env, row.batch_id, "telegram_approval", true);
     return sendBotMessage(env, chatId, "خبر رد شد و منتشر نخواهد شد.");
   }
   if (env.PUBLISH_ENABLED !== "true") return sendBotMessage(env, chatId, "انتشار فعلاً متوقف است. ابتدا کلید اصلی PUBLISH_ENABLED را در Cloudflare روشن کن؛ تا آن زمان هیچ خبری ارسال نمی‌شود.");
@@ -578,7 +458,6 @@ async function reviewStory(env, chatId, storyId, decision) {
     await publishReviewedStory(env, story);
     await env.DB.prepare("UPDATE story_review_queue SET review_status='published', updated_at=CURRENT_TIMESTAMP WHERE story_id=?").bind(storyId).run();
     await logEvent(env, "story_approved_and_published", storyId);
-    await maybePublishProxyFooter(env, row.batch_id, "telegram_approval", true);
     return sendBotMessage(env, chatId, `✅ خبر منتشر شد:\\n${escapeHtml(story.title)}`, undefined, "HTML");
   } catch (error) {
     await env.DB.prepare("UPDATE story_review_queue SET review_status='pending', updated_at=CURRENT_TIMESTAMP WHERE story_id=?").bind(storyId).run();
