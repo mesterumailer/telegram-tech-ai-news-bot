@@ -11,6 +11,48 @@ const stories = [1, 2, 3].map(n => ({
 }));
 const valid = { batch_id: '2026-10-30-daily', stories };
 
+function createReviewDb(story, reviewStatus = 'pending') {
+  const statements = [];
+  return {
+    statements,
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            async first() {
+              statements.push({ sql, values, method: 'first' });
+              if (sql.includes('FROM story_review_queue')) {
+                return { story_id: story.id, story_json: JSON.stringify(story), review_status: reviewStatus };
+              }
+              if (sql.includes('FROM published_stories')) return null;
+              return null;
+            },
+            async all() {
+              statements.push({ sql, values, method: 'all' });
+              return { results: [{ story_id: story.id, story_json: JSON.stringify(story), review_status: reviewStatus }] };
+            },
+            async run() {
+              statements.push({ sql, values, method: 'run' });
+              return { meta: { changes: 1 } };
+            }
+          };
+        }
+      };
+    }
+  };
+}
+
+function callbackUpdate(data, userId = 123) {
+  return {
+    callback_query: {
+      id: 'callback-test-1',
+      data,
+      from: { id: userId },
+      message: { message_id: 77, chat: { id: userId, type: 'private' } }
+    }
+  };
+}
+
 test('accepts exactly three valid stories with HTTPS sources', () => assert.deepEqual(validateDigest(valid), { ok: true }));
 test('rejects a digest without a batch id', () => assert.equal(validateDigest({ ...valid, batch_id: '' }).ok, false));
 test('rejects fewer than three stories', () => assert.equal(validateDigest({ ...valid, stories: stories.slice(0, 2) }).ok, false));
@@ -227,6 +269,114 @@ test('resolves relative article image metadata and HTML-escaped URL parameters',
   try {
     await sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', stories[0]);
     assert.equal(calls[0].payload.photo, 'https://example.com/assets/news.jpg?size=large&format=jpg');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('builds review buttons within Telegram callback_data 64-byte limit for long story IDs', async () => {
+  const { buildStoryReviewKeyboard } = await import('../src/index.js');
+  const longStory = { ...stories[0], id: 'openai-perturbai-scripps-thousands-agents-brain-cells-20261021' };
+  const keyboard = buildStoryReviewKeyboard(longStory);
+  for (const button of keyboard.inline_keyboard[0]) {
+    assert.ok(Buffer.byteLength(button.callback_data, 'utf8') <= 64);
+  }
+  assert.match(keyboard.inline_keyboard[0][0].callback_data, /^approve:/);
+  assert.match(keyboard.inline_keyboard[0][1].callback_data, /^reject:/);
+});
+
+test('reject button callback updates the review queue and sends an explicit confirmation', async () => {
+  const story = { ...stories[1] };
+  const DB = createReviewDb(story);
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, payload: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/telegram/webhook', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-telegram-bot-api-secret-token': 'webhook-secret'
+      },
+      body: JSON.stringify(callbackUpdate('reject:short-token'))
+    }), {
+      TELEGRAM_WEBHOOK_SECRET: 'webhook-secret',
+      TELEGRAM_ADMIN_USER_ID: '123',
+      TELEGRAM_BOT_TOKEN: 'test-token',
+      DB
+    });
+    assert.equal(response.status, 200);
+    assert.ok(DB.statements.some(x => x.sql.includes("SET review_status='rejected'")));
+    assert.equal(calls[0].url.split('/').pop(), 'answerCallbackQuery');
+    assert.equal(calls[1].url.split('/').pop(), 'sendMessage');
+    assert.match(calls[1].payload.text, /خبر رد شد/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('approve button explains the master publish switch when publishing is disabled', async () => {
+  const story = { ...stories[1] };
+  const DB = createReviewDb(story);
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, payload: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/telegram/webhook', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-telegram-bot-api-secret-token': 'webhook-secret'
+      },
+      body: JSON.stringify(callbackUpdate('approve:short-token'))
+    }), {
+      TELEGRAM_WEBHOOK_SECRET: 'webhook-secret',
+      TELEGRAM_ADMIN_USER_ID: '123',
+      TELEGRAM_BOT_TOKEN: 'test-token',
+      PUBLISH_ENABLED: 'false',
+      DB
+    });
+    assert.equal(response.status, 200);
+    assert.ok(!DB.statements.some(x => x.sql.includes("SET review_status='publishing'")));
+    const reply = calls.find(x => x.url.endsWith('/sendMessage'));
+    assert.match(reply.payload.text, /PUBLISH_ENABLED/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('webhook status endpoint reports whether callback_query updates are enabled', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestUrl = '';
+  globalThis.fetch = async (url) => {
+    requestUrl = String(url);
+    return new Response(JSON.stringify({
+      ok: true,
+      result: {
+        url: 'https://worker.example/telegram/webhook',
+        pending_update_count: 2,
+        allowed_updates: ['message', 'callback_query'],
+        last_error_message: 'old transient error'
+      }
+    }), { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/admin/webhook-status', {
+      method: 'POST',
+      headers: { authorization: 'Bearer admin-secret' }
+    }), { ADMIN_SECRET: 'admin-secret', TELEGRAM_BOT_TOKEN: 'test-token' });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(requestUrl.split('/').pop(), 'getWebhookInfo');
+    assert.equal(body.webhook_configured, true);
+    assert.equal(body.callback_query_enabled, true);
+    assert.equal(body.pending_update_count, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }
