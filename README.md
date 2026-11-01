@@ -108,3 +108,11 @@ Required Cloudflare setup after deploying this version:
 5. Keep `PUBLISH_ENABLED=false` while testing the interface. After all tests pass, enable it to allow manual approvals to send; automatic publishing still requires choosing auto mode inside Telegram.
 
 The admin panel is private-chat only. Never put the bot token, admin secret, or webhook secret in GitHub.
+
+
+## بررسی عملکرد دکمه‌های مدیر
+
+- دکمه‌های تأیید و رد از شناسهٔ کوتاه و پایدار خبر در `callback_data` استفاده می‌کنند تا از محدودیت ۶۴ بایتی تلگرام عبور نکنند.
+- برای بررسی دریافت رویدادهای دکمه، endpoint امن `POST /admin/webhook-status` را با هدر `Authorization: Bearer <ADMIN_SECRET>` فراخوانی کنید. خروجی، URL وب‌هوک، فعال بودن `callback_query`، تعداد آپدیت‌های معطل و آخرین خطای تلگرام را نشان می‌دهد.
+- اگر وب‌هوک تنظیم نیست یا `callback_query` در `allowed_updates` نیست، ابتدا `POST /admin/register-webhook` را با همان هدر اجرا کنید.
+- انتشار دستی با دکمهٔ «تأیید و انتشار» همچنان به `PUBLISH_ENABLED=true` نیاز دارد. انتخاب «انتشار خودکار» فقط شیوهٔ انتشار بسته‌های آینده را تنظیم می‌کند و به‌تنهایی خبرهای منتظر را منتشر نمی‌کند.
