@@ -116,6 +116,15 @@ export function validateDigest(digest) {
       const parsed = new URL(s.source_url);
       if (parsed.protocol !== "https:") return { ok: false, error: `stories[${i}].source_url must use HTTPS` };
     } catch { return { ok: false, error: `stories[${i}].source_url is invalid` }; }
+    if (s.image_url !== undefined && s.image_url !== null && s.image_url !== "") {
+      if (typeof s.image_url !== "string" || s.image_url.length > 2048) return { ok: false, error: `stories[${i}].image_url is invalid` };
+      try {
+        const imageUrl = new URL(s.image_url);
+        if (imageUrl.protocol !== "https:" || !imageUrl.hostname || imageUrl.username || imageUrl.password) return { ok: false, error: `stories[${i}].image_url must be a public HTTPS URL` };
+      } catch { return { ok: false, error: `stories[${i}].image_url is invalid` }; }
+    }
+    if (s.image_credit !== undefined && (typeof s.image_credit !== "string" || s.image_credit.length > 160)) return { ok: false, error: `stories[${i}].image_credit is invalid` };
+    if (s.image_alt !== undefined && (typeof s.image_alt !== "string" || s.image_alt.length > 300)) return { ok: false, error: `stories[${i}].image_alt is invalid` };
     if (s.title.length > 300 || s.summary.length > 2500) return { ok: false, error: `stories[${i}] text is too long` };
   }
   return { ok: true };
@@ -184,16 +193,98 @@ async function processDigest(digest, env, origin) {
   return { ok, batch_id: digest.batch_id, outcomes };
 }
 
+function codePointLength(value) { return Array.from(String(value)).length; }
+
+function truncateCodePoints(value, maxLength) {
+  return Array.from(String(value)).slice(0, Math.max(0, maxLength)).join("");
+}
+
+export function buildStoryCaption(story, statusLabel = "") {
+  const fixedParts = [
+    \`📰 \${story.title}\`,
+    "🔎 منبع خبر"
+  ];
+  if (story.category) fixedParts.push(\`🏷 \${story.category}\`);
+  if (story.published_at) fixedParts.push(\`📅 \${story.published_at}\`);
+  if (story.image_credit) fixedParts.push(\`🖼 تصویر: \${story.image_credit}\`);
+  if (statusLabel) fixedParts.push(\`وضعیت: \${statusLabel}\`);
+
+  const fixedLength = codePointLength(fixedParts.join("\n"));
+  const summaryBudget = Math.max(0, 1024 - fixedLength - 2);
+  const summary = truncateCodePoints(story.summary, summaryBudget);
+  const parts = [
+    \`<b>\${escapeHtml(story.title)}</b>\`,
+    escapeHtml(summary),
+    \`<a href="\${escapeAttribute(story.source_url)}">🔎 منبع خبر</a>\`
+  ];
+  if (story.category) parts.push(\`🏷 \${escapeHtml(story.category)}\`);
+  if (story.published_at) parts.push(\`📅 \${escapeHtml(story.published_at)}\`);
+  if (story.image_credit) parts.push(\`🖼 تصویر: \${escapeHtml(story.image_credit)}\`);
+  if (statusLabel) parts.push(\`وضعیت: \${escapeHtml(statusLabel)}\`);
+  return parts.join("\n\n");
+}
+
+function buildStoryText(story, statusLabel = "") {
+  const parts = [
+    \`<b>\${escapeHtml(story.title)}</b>\`,
+    escapeHtml(story.summary),
+    \`🔎 <a href="\${escapeAttribute(story.source_url)}">منبع خبر</a>\`
+  ];
+  if (story.category) parts.push(\`🏷 \${escapeHtml(story.category)}\`);
+  if (story.published_at) parts.push(\`📅 \${escapeHtml(story.published_at)}\`);
+  if (story.image_credit) parts.push(\`🖼 تصویر: \${escapeHtml(story.image_credit)}\`);
+  if (statusLabel) parts.push(\`وضعیت: <b>\${escapeHtml(statusLabel)}</b>\`);
+  return parts.join("\n\n");
+}
+
+export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLabel = "") {
+  if (!env.TELEGRAM_BOT_TOKEN || !chatId) throw new Error("Missing Telegram credentials or target chat");
+  const endpoint = \`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}\`;
+  const requestTelegram = async (method, payload) => {
+    const response = await fetch(\`\${endpoint}/\${method}\`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    let result;
+    try { result = await response.json(); }
+    catch { throw new Error(\`Telegram \${method} returned an unreadable response (HTTP \${response.status})\`); }
+    return { response, result };
+  };
+
+  if (story.image_url) {
+    const photoPayload = {
+      chat_id: chatId,
+      photo: story.image_url,
+      caption: buildStoryCaption(story, statusLabel),
+      parse_mode: "HTML",
+      disable_notification: false
+    };
+    if (replyMarkup) photoPayload.reply_markup = replyMarkup;
+    const photoResult = await requestTelegram("sendPhoto", photoPayload);
+    if (photoResult.response.ok && photoResult.result?.ok === true) return;
+    if (photoResult.result?.ok !== false) {
+      throw new Error(\`Telegram photo send failed with HTTP \${photoResult.response.status}\`);
+    }
+    await logEvent(env, "photo_send_fallback", \`\${story.id}: \${safeError(photoResult.result.description || "Telegram rejected the image")}\`);
+  }
+
+  const textPayload = {
+    chat_id: chatId,
+    text: buildStoryText(story, statusLabel),
+    parse_mode: "HTML",
+    disable_web_page_preview: false
+  };
+  if (replyMarkup) textPayload.reply_markup = replyMarkup;
+  const textResult = await requestTelegram("sendMessage", textPayload);
+  if (!textResult.response.ok || !textResult.result?.ok) {
+    throw new Error(\`Telegram text send failed with HTTP \${textResult.response.status}: \${textResult.result?.description || "unknown error"}\`);
+  }
+}
+
 async function sendTelegram(env, story) {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHANNEL_ID) throw new Error("Missing Telegram credentials");
-  const text = `📰 <b>${escapeHtml(story.title)}</b>\n\n${escapeHtml(story.summary)}\n\n🔎 <a href="${escapeAttribute(story.source_url)}">منبع خبر</a>${story.category ? `\n🏷 ${escapeHtml(story.category)}` : ""}`;
-  const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: env.TELEGRAM_CHANNEL_ID, text, parse_mode: "HTML", disable_web_page_preview: false })
-  });
-  const result = await response.json();
-  if (!response.ok || !result.ok) throw new Error(`Telegram send failed with HTTP ${response.status}`);
+  if (!env.TELEGRAM_CHANNEL_ID) throw new Error("Missing Telegram channel ID");
+  return sendStoryToChat(env, env.TELEGRAM_CHANNEL_ID, story);
 }
 
 async function upsertStory(env, story, status, origin, error = null) {
@@ -313,18 +404,16 @@ async function showLatestNews(env, chatId, adminView = true) {
   await sendBotMessage(env, chatId, intro, undefined, "HTML");
   for (const story of digest.stories) {
     let keyboard;
-    let statusLine = "";
+    let statusLabel = "";
     if (adminView) {
       const status = await env.DB.prepare("SELECT review_status FROM story_review_queue WHERE story_id = ?").bind(story.id).first();
-      const label = status?.review_status === "approved" ? "تأیید شده" : status?.review_status === "rejected" ? "رد شده" : "در انتظار بررسی";
+      statusLabel = status?.review_status === "approved" ? "تأیید شده" : status?.review_status === "rejected" ? "رد شده" : "در انتظار بررسی";
       keyboard = status?.review_status === "pending" ? { inline_keyboard: [[
-        { text: "✅ تأیید و انتشار", callback_data: `approve:${story.id}` },
-        { text: "❌ رد خبر", callback_data: `reject:${story.id}` }
+        { text: "✅ تأیید و انتشار", callback_data: \`approve:\${story.id}\` },
+        { text: "❌ رد خبر", callback_data: \`reject:\${story.id}\` }
       ]] } : { inline_keyboard: [[{ text: "↻ به‌روزرسانی فهرست", callback_data: "latest" }]] };
-      statusLine = `\\n\\nوضعیت: <b>${label}</b>`;
     }
-    const text = `<b>${escapeHtml(story.title)}</b>\\n\\n${escapeHtml(story.summary)}\\n\\n🏷 ${escapeHtml(story.category || "بدون دسته")}\\n📅 ${escapeHtml(story.published_at || "زمان نامشخص")}\\n🔗 <a href="${escapeAttribute(story.source_url)}">مشاهده منبع</a>${statusLine}`;
-    await sendBotMessage(env, chatId, text, keyboard, "HTML");
+    await sendStoryToChat(env, chatId, story, keyboard, statusLabel);
   }
 }
 
