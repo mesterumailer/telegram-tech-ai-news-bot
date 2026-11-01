@@ -35,6 +35,23 @@ test('rejects malformed image metadata', () => {
   assert.equal(validateDigest(withImage).ok, false);
 });
 
+
+test('renders proxy URLs only as embedded proxy1 and proxy2 links', () => {
+  const caption = buildStoryCaption({
+    ...stories[0],
+    proxy1_url: 'https://t.me/ProxyMTProto/48256',
+    proxy2_url: 'https://t.me/ProxyMTProto/48255'
+  });
+  assert.match(caption, /<a href="https:\/\/t\.me\/ProxyMTProto\/48256">پروکسی1<\/a>/);
+  assert.match(caption, /<a href="https:\/\/t\.me\/ProxyMTProto\/48255">پروکسی2<\/a>/);
+  assert.doesNotMatch(caption, /48256|48255/);
+});
+
+test('rejects non-HTTPS proxy links', () => {
+  const invalid = { ...valid, stories: [{ ...stories[0], proxy1_url: 'http://t.me/proxy' }, stories[1], stories[2]] };
+  assert.equal(validateDigest(invalid).ok, false);
+});
+
 test('photo caption remains within Telegram 1024-character limit', () => {
   const caption = buildStoryCaption({
     ...stories[0],
