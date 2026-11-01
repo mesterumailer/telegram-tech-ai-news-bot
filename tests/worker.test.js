@@ -165,3 +165,47 @@ test('Telegram webhook rejects an incorrect secret', async () => {
   }), { TELEGRAM_WEBHOOK_SECRET: 'webhook-secret' });
   assert.equal(response.status, 401);
 });
+
+test('renders proxy URLs as compact clickable labels and hides raw URLs', async () => {
+  const originalFetch = globalThis.fetch;
+  let payload;
+  globalThis.fetch = async (_url, options) => {
+    payload = JSON.parse(options.body);
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    await sendStoryToChat(
+      { TELEGRAM_BOT_TOKEN: 'test-token' },
+      '@test-channel',
+      {
+        ...stories[0],
+        summary: 'خلاصه خبر\\n🔐 پروکسی ۱: https://t.me/ProxyMTProto/48256\\n🔐 پروکسی ۲: https://t.me/ProxyMTProto/48255'
+      }
+    );
+    assert.match(payload.text, /<a href="https:\/\/t\.me\/ProxyMTProto\/48256">پروکسی1<\/a>/);
+    assert.match(payload.text, /<a href="https:\/\/t\.me\/ProxyMTProto\/48255">پروکسی2<\/a>/);
+    assert.doesNotMatch(payload.text, /🔐|ProxyMTProto\/4825[56]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('keeps non-Telegram proxy URLs visible rather than turning them into links', async () => {
+  const originalFetch = globalThis.fetch;
+  let payload;
+  globalThis.fetch = async (_url, options) => {
+    payload = JSON.parse(options.body);
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    await sendStoryToChat(
+      { TELEGRAM_BOT_TOKEN: 'test-token' },
+      '@test-channel',
+      { ...stories[0], summary: 'پروکسی1: https://example.com/proxy' }
+    );
+    assert.match(payload.text, /https:\/\/example\.com\/proxy/);
+    assert.doesNotMatch(payload.text, /<a href="https:\/\/example\.com\/proxy">/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
