@@ -37,7 +37,7 @@
 
 ## قالب خروجی ChatGPT
 
-فایل `content/ready-digest.json` باید شبیه `examples/ready-digest.json` باشد. برای هر خبر `id` پایدار و یکتا، عنوان فارسی، خلاصه، لینک HTTPS منبع و در صورت امکان دسته و زمان انتشار لازم است. هر batch یک `batch_id` دارد. فیلدهای تصویری اختیاری‌اند: `image_url` باید لینک مستقیم، عمومی و HTTPS به فایل تصویر باشد (نه لینک صفحه مقاله)، `image_credit` اعتبار دقیق عکاس/شرکت/ناشر و `image_alt` شرح کوتاه تصویر است. هرگز URL تصویر یا اعتبار آن را حدس نزنید؛ اگر تصویر مستقیم و قابل استفاده پیدا نشد، فیلد تصویر را حذف کنید.
+فایل `content/ready-digest.json` باید شبیه `examples/ready-digest.json` باشد. برای هر خبر `id` پایدار و یکتا، عنوان فارسی، خلاصه، لینک HTTPS منبع و در صورت امکان دسته و زمان انتشار لازم است. هر batch یک `batch_id` دارد. فیلدهای تصویری اختیاری‌اند: `image_url` در صورت وجود باید لینک مستقیم، عمومی و HTTPS به فایل تصویر باشد (نه لینک صفحه مقاله)، `image_credit` اعتبار دقیق عکاس/شرکت/ناشر و `image_alt` شرح کوتاه تصویر است. اگر `image_url` خالی باشد، Worker تلاش می‌کند تصویر صفحهٔ مقاله را از متادیتای `og:image` یا `twitter:image` استخراج کند؛ اگر سایت تصویر قابل‌دسترسی ارائه نکند، خبر متنی ارسال و رویداد `image_not_found` ثبت می‌شود.
 
 
 ## انتشار خبر همراه تصویر
@@ -101,10 +101,27 @@ Publication behavior:
 - Only administrative commands and callback actions are restricted by `TELEGRAM_ADMIN_USER_ID`; public users cannot approve/reject stories or change publication settings. Webhook requests are verified with `TELEGRAM_WEBHOOK_SECRET`.
 
 Required Cloudflare setup after deploying this version:
-1. Apply migration `0002_telegram_admin_ui.sql` to the existing D1 database.
+1. Apply all pending D1 migrations, including `0002_telegram_admin_ui.sql` and `0003_telegram_webhook_idempotency.sql`, to the existing D1 database.
 2. Add `TELEGRAM_ADMIN_USER_ID` as a Text variable containing the numeric Telegram user ID of the manager.
 3. Add `TELEGRAM_WEBHOOK_SECRET` as a Secret. Use a random 32+ character value containing only letters, digits, underscores or hyphens.
 4. Call `POST /admin/register-webhook` with `Authorization: Bearer <ADMIN_SECRET>`. This securely registers the Worker URL with Telegram; the bot token is not needed in the PowerShell request.
 5. Keep `PUBLISH_ENABLED=false` while testing the interface. After all tests pass, enable it to allow manual approvals to send; automatic publishing still requires choosing auto mode inside Telegram.
 
 The admin panel is private-chat only. Never put the bot token, admin secret, or webhook secret in GitHub.
+
+
+## بررسی عملکرد دکمه‌های مدیر
+
+- دکمه‌های تأیید و رد از شناسهٔ کوتاه و پایدار خبر در `callback_data` استفاده می‌کنند تا از محدودیت ۶۴ بایتی تلگرام عبور نکنند.
+- برای بررسی دریافت رویدادهای دکمه، endpoint امن `POST /admin/webhook-status` را با هدر `Authorization: Bearer <ADMIN_SECRET>` فراخوانی کنید. خروجی، URL وب‌هوک، فعال بودن `callback_query`، تعداد آپدیت‌های معطل و آخرین خطای تلگرام را نشان می‌دهد.
+- اگر وب‌هوک تنظیم نیست یا `callback_query` در `allowed_updates` نیست، ابتدا `POST /admin/register-webhook` را با همان هدر اجرا کنید.
+- انتشار دستی با دکمهٔ «تأیید و انتشار» همچنان به `PUBLISH_ENABLED=true` نیاز دارد. انتخاب «انتشار خودکار» فقط شیوهٔ انتشار بسته‌های آینده را تنظیم می‌کند و به‌تنهایی خبرهای منتظر را منتشر نمی‌کند.
+
+
+## جلوگیری از تکرار در پنل تلگرام
+
+- هر آپدیت دریافتی از تلگرام با `update_id` در جدول `telegram_webhook_updates` به‌صورت اتمیک ثبت می‌شود. ارسال دوبارهٔ همان آپدیت از طرف تلگرام بدون اجرای مجدد عملیات، با پاسخ موفق دریافت می‌شود.
+- وضعیت آپدیت‌ها (`processing`، `processed` یا `failed`) و خطای احتمالی برای بررسی در D1 نگهداری می‌شود. رکوردهای قدیمی‌تر از ۳۰ روز در اجرای زمان‌بندی‌شده پاک می‌شوند.
+- نمایش آخرین اخبار برای هر گفتگوی خصوصی قفل مستقل دارد؛ درخواست‌های هم‌زمان رد می‌شوند و پس از پایان نمایش نیز تا ۱۰ ثانیه درخواست تازه پذیرفته نمی‌شود.
+- قفل نمایش در صورت متوقف‌شدن اجرای Worker حداکثر پس از ۱۲۰ ثانیه منقضی می‌شود. برای جلوگیری از ارسال تکراری، آپدیت تلگرام که قبلاً claim شده باشد حتی در صورت خطای اجرای قبلی دوباره پردازش نمی‌شود؛ وضعیت خطا در D1 ثبت می‌شود و در چنین مواردی بررسی دستی لازم است.
+- برای فعال‌شدن این محافظ‌ها، مهاجرت `0003_telegram_webhook_idempotency.sql` باید روی D1 راه دور اجرا شود.
