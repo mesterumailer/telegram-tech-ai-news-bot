@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { validateDigest } from '../src/index.js';
+import worker, { validateDigest, sendStoryToChat, buildStoryCaption } from '../src/index.js';
 
 const stories = [1, 2, 3].map(n => ({
   id: `story-${n}`,
@@ -19,6 +19,120 @@ test('rejects duplicate story ids', () => assert.equal(validateDigest({ ...valid
 test('rejects non-HTTPS source URLs', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: 'http://example.com' }, stories[1], stories[2]] }).ok, false));
 test('rejects a story missing its source URL', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: '' }, stories[1], stories[2]] }).ok, false));
 test('rejects oversized story text', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], summary: 'x'.repeat(2501) }, stories[1], stories[2]] }).ok, false));
+
+test('accepts an optional direct HTTPS image URL', () => {
+  const withImage = { ...valid, stories: [{ ...stories[0], image_url: 'https://cdn.example.com/news.jpg' }, stories[1], stories[2]] };
+  assert.deepEqual(validateDigest(withImage), { ok: true });
+});
+
+test('rejects non-HTTPS image URLs', () => {
+  const withImage = { ...valid, stories: [{ ...stories[0], image_url: 'http://cdn.example.com/news.jpg' }, stories[1], stories[2]] };
+  assert.equal(validateDigest(withImage).ok, false);
+});
+
+test('rejects malformed image metadata', () => {
+  const withImage = { ...valid, stories: [{ ...stories[0], image_credit: 'x'.repeat(161) }, stories[1], stories[2]] };
+  assert.equal(validateDigest(withImage).ok, false);
+});
+
+test('photo caption remains within Telegram 1024-character limit', () => {
+  const caption = buildStoryCaption({
+    ...stories[0],
+    summary: 'خبر مهم '.repeat(500),
+    image_credit: 'منبع تصویر رسمی',
+    published_at: '2026-11-01T08:00:00Z'
+  });
+  const visibleText = caption
+    .replace(/<[^>]*>/g, '')
+    .replaceAll('&amp;', '&')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"');
+  assert.ok(Array.from(visibleText).length <= 1024);
+});
+
+test('sends a story with an image using Telegram sendPhoto and preserves review buttons', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, payload: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const keyboard = { inline_keyboard: [[{ text: 'تأیید', callback_data: 'approve:story-1' }]] };
+    await sendStoryToChat(
+      { TELEGRAM_BOT_TOKEN: 'test-token' },
+      '@test-channel',
+      { ...stories[0], image_url: 'https://cdn.example.com/news.jpg' },
+      keyboard,
+      'در انتظار بررسی'
+    );
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].url, /\/sendPhoto$/);
+    assert.equal(calls[0].payload.photo, 'https://cdn.example.com/news.jpg');
+    assert.deepEqual(calls[0].payload.reply_markup, keyboard);
+    assert.equal(calls[0].payload.parse_mode, 'HTML');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('falls back to a text post when Telegram explicitly rejects the photo', async () => {
+  const originalFetch = globalThis.fetch;
+  const methods = [];
+  globalThis.fetch = async (url) => {
+    methods.push(url.split('/').pop());
+    if (methods.length === 1) return new Response(JSON.stringify({ ok: false, description: 'wrong file identifier' }), { status: 400 });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    await sendStoryToChat(
+      { TELEGRAM_BOT_TOKEN: 'test-token' },
+      '@test-channel',
+      { ...stories[0], image_url: 'https://cdn.example.com/not-an-image' }
+    );
+    assert.deepEqual(methods, ['sendPhoto', 'sendMessage']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('does not retry as text after an ambiguous network error on photo send', async () => {
+  const originalFetch = globalThis.fetch;
+  const methods = [];
+  globalThis.fetch = async (url) => {
+    methods.push(url.split('/').pop());
+    throw new Error('simulated network timeout');
+  };
+  try {
+    await assert.rejects(
+      sendStoryToChat(
+        { TELEGRAM_BOT_TOKEN: 'test-token' },
+        '@test-channel',
+        { ...stories[0], image_url: 'https://cdn.example.com/news.jpg' }
+      ),
+      /simulated network timeout/
+    );
+    assert.deepEqual(methods, ['sendPhoto']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('sends text-only stories with sendMessage when no image is provided', async () => {
+  const originalFetch = globalThis.fetch;
+  const methods = [];
+  globalThis.fetch = async (url) => {
+    methods.push(url.split('/').pop());
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    await sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', stories[0]);
+    assert.deepEqual(methods, ['sendMessage']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test('test-message endpoint rejects requests without admin authorization', async () => {
   const response = await worker.fetch(new Request('https://worker.example/admin/test-message', { method: 'POST' }), {});
