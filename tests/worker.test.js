@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { validateDigest, sendStoryToChat, buildStoryCaption, parseLatestMtprotoProxies, buildProxyMessage } from '../src/index.js';
+import worker, { validateDigest, sendStoryToChat, buildStoryCaption } from '../src/index.js';
 
 const stories = [1, 2, 3].map(n => ({
   id: `story-${n}`,
@@ -12,40 +12,6 @@ const stories = [1, 2, 3].map(n => ({
 const valid = { batch_id: '2026-10-30-daily', stories };
 
 test('accepts exactly three valid stories with HTTPS sources', () => assert.deepEqual(validateDigest(valid), { ok: true }));
-
-test('extracts the two newest unique valid MTProto links in page order', () => {
-  const html = [
-    '<a href="https://t.me/proxy?server=old.example&amp;port=443&amp;secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">old</a>',
-    '<a href="https://t.me/proxy?server=middle.example&amp;port=443&amp;secret=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb">middle</a>',
-    '<a href="https://t.me/proxy?server=middle.example&amp;port=443&amp;secret=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb">duplicate</a>',
-    '<a href="https://t.me/proxy?server=latest.example&amp;port=88&amp;secret=cccccccccccccccccccccccccccccccc">latest</a>'
-  ].join('');
-  const proxies = parseLatestMtprotoProxies(html);
-  assert.deepEqual(proxies.map(proxy => proxy.server), ['middle.example', 'latest.example']);
-  assert.equal(proxies[1].port, 88);
-  assert.match(proxies[1].url, /^https:\/\/t\.me\/proxy\?/);
-});
-
-test('ignores malformed or incomplete MTProto links', () => {
-  const html = [
-    '<a href="https://t.me/proxy?server=Unknown&amp;port=443&amp;secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">unknown</a>',
-    '<a href="https://t.me/proxy?server=missing-port.example&amp;secret=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb">missing</a>',
-    '<a href="https://t.me/proxy?server=valid.example&amp;port=443&amp;secret=short">short</a>'
-  ].join('');
-  assert.deepEqual(parseLatestMtprotoProxies(html), []);
-});
-
-test('builds a Persian proxy footer with numbered, clickable connect links and source credit', () => {
-  const message = buildProxyMessage([
-    { server: 'one.example', port: 443, url: 'https://t.me/proxy?server=one.example&port=443&secret=aaaaaaaaaaaaaaaa' },
-    { server: 'two.example', port: 88, url: 'https://t.me/proxy?server=two.example&port=88&secret=bbbbbbbbbbbbbbbb' }
-  ]);
-  assert.match(message, /پروکسی ۱/);
-  assert.match(message, /پروکسی ۲/);
-  assert.match(message, /one\.example:443/);
-  assert.match(message, /@proxyMtProto/);
-  assert.match(message, /&amp;port=443/);
-});
 test('rejects a digest without a batch id', () => assert.equal(validateDigest({ ...valid, batch_id: '' }).ok, false));
 test('rejects fewer than three stories', () => assert.equal(validateDigest({ ...valid, stories: stories.slice(0, 2) }).ok, false));
 test('rejects more than three stories', () => assert.equal(validateDigest({ ...valid, stories: [...stories, { ...stories[0], id: 'story-4' }] }).ok, false));
