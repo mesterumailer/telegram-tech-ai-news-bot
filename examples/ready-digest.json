@@ -9,7 +9,10 @@
       "summary": "این متن صرفاً نمونه است و خبر واقعی نیست. آن را با خبر معتبر جایگزین کنید.",
       "source_url": "https://example.com/news-item-1",
       "category": "هوش مصنوعی",
-      "published_at": "2026-10-30T07:00:00Z"
+      "published_at": "2026-10-30T07:00:00Z",
+      "image_url": "https://example.com/story-1.jpg",
+      "image_credit": "نام عکاس یا منبع تصویر",
+      "image_alt": "شرح کوتاه و دقیق تصویر مرتبط با خبر"
     },
     {
       "id": "example-story-002",
