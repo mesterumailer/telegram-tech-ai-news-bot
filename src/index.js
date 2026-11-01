@@ -246,6 +246,69 @@ function buildStoryText(story, statusLabel = "") {
   return parts.join("\n\n");
 }
 
+function decodeHtmlEntities(value) {
+  return String(value)
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+function readHtmlAttribute(tag, name) {
+  const attributes = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g;
+  let match;
+  while ((match = attributes.exec(tag)) !== null) {
+    if (match[1].toLowerCase() === name.toLowerCase()) {
+      return decodeHtmlEntities(match[2] ?? match[3] ?? match[4] ?? "");
+    }
+  }
+  return "";
+}
+
+function findPageImage(html) {
+  const candidates = [];
+  for (const tag of String(html).match(/<meta\b[^>]*>/gi) || []) {
+    const key = (
+      readHtmlAttribute(tag, "property")
+      || readHtmlAttribute(tag, "name")
+      || readHtmlAttribute(tag, "itemprop")
+    ).toLowerCase();
+    if (["og:image", "og:image:url", "og:image:secure_url", "twitter:image", "twitter:image:src", "image"].includes(key)) {
+      const content = readHtmlAttribute(tag, "content");
+      if (content) candidates.push(content);
+    }
+  }
+  return candidates[0] || "";
+}
+
+async function resolveStoryImageUrl(story) {
+  if (story.image_url) return story.image_url;
+  try {
+    const source = new URL(story.source_url);
+    if (source.protocol !== "https:") return null;
+    const response = await fetch(source.toString(), {
+      headers: {
+        "accept": "text/html,application/xhtml+xml",
+        "user-agent": "Mozilla/5.0 (compatible; TelegramNewsPublisher/1.0)"
+      },
+      redirect: "follow"
+    });
+    if (!response.ok) return null;
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) return null;
+    const html = (await response.text()).slice(0, 1_000_000);
+    const candidate = findPageImage(html);
+    if (!candidate) return null;
+    const imageUrl = new URL(candidate, response.url || source.toString());
+    if (imageUrl.protocol !== "https:" || !imageUrl.hostname || imageUrl.username || imageUrl.password) return null;
+    if (["localhost", "127.0.0.1", "::1"].includes(imageUrl.hostname.toLowerCase())) return null;
+    return imageUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLabel = "") {
   if (!env.TELEGRAM_BOT_TOKEN || !chatId) throw new Error("Missing Telegram credentials or target chat");
   const endpoint = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
@@ -261,10 +324,11 @@ export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLab
     return { response, result };
   };
 
-  if (story.image_url) {
+  const resolvedImageUrl = await resolveStoryImageUrl(story);
+  if (resolvedImageUrl) {
     const photoPayload = {
       chat_id: chatId,
-      photo: story.image_url,
+      photo: resolvedImageUrl,
       caption: buildStoryCaption(story, statusLabel),
       parse_mode: "HTML",
       disable_notification: false
@@ -276,6 +340,8 @@ export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLab
       throw new Error(`Telegram photo send failed with HTTP ${photoResult.response.status}`);
     }
     await logEvent(env, "photo_send_fallback", `${story.id}: ${safeError(photoResult.result.description || "Telegram rejected the image")}`);
+  } else {
+    await logEvent(env, "image_not_found", `${story.id}: no direct image_url or supported article image metadata`);
   }
 
   const textPayload = {
