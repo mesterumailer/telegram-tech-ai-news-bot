@@ -13,8 +13,10 @@ const valid = { batch_id: '2026-10-30-daily', stories };
 
 function createReviewDb(story, reviewStatus = 'pending') {
   const statements = [];
+  const processedUpdates = new Set();
   return {
     statements,
+    processedUpdates,
     prepare(sql) {
       return {
         bind(...values) {
@@ -35,6 +37,11 @@ function createReviewDb(story, reviewStatus = 'pending') {
             },
             async run() {
               statements.push({ sql, values, method: 'run' });
+              if (sql.includes('INSERT INTO telegram_webhook_updates')) {
+                if (processedUpdates.has(values[0])) return { meta: { changes: 0 } };
+                processedUpdates.add(values[0]);
+                return { meta: { changes: 1 } };
+              }
               return { meta: { changes: 1 } };
             }
           };
@@ -44,8 +51,9 @@ function createReviewDb(story, reviewStatus = 'pending') {
   };
 }
 
-function callbackUpdate(data, userId = 123) {
+function callbackUpdate(data, userId = 123, updateId = 1001) {
   return {
+    update_id: updateId,
     callback_query: {
       id: 'callback-test-1',
       data,
@@ -319,6 +327,49 @@ test('reject button callback updates the review queue and sends an explicit conf
     assert.equal(calls[0].url.split('/').pop(), 'answerCallbackQuery');
     assert.equal(calls[1].url.split('/').pop(), 'sendMessage');
     assert.match(calls[1].payload.text, /خبر رد شد/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Telegram webhook processes each update_id only once', async () => {
+  const story = { ...stories[0] };
+  const DB = createReviewDb(story);
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), payload: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const requestBody = JSON.stringify(callbackUpdate('settings', 123, 9001));
+    const makeRequest = () => new Request('https://worker.example/telegram/webhook', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-telegram-bot-api-secret-token': 'webhook-secret'
+      },
+      body: requestBody
+    });
+    const env = {
+      TELEGRAM_WEBHOOK_SECRET: 'webhook-secret',
+      TELEGRAM_ADMIN_USER_ID: '123',
+      TELEGRAM_BOT_TOKEN: 'test-token',
+      DB
+    };
+
+    const first = await worker.fetch(makeRequest(), env);
+    const firstBody = await first.json();
+    const second = await worker.fetch(makeRequest(), env);
+    const secondBody = await second.json();
+
+    assert.equal(first.status, 200);
+    assert.deepEqual(firstBody, { ok: true });
+    assert.equal(second.status, 200);
+    assert.deepEqual(secondBody, { ok: true, duplicate: true });
+    assert.equal(DB.processedUpdates.size, 1);
+    assert.equal(calls.filter(x => x.url.endsWith('/sendMessage')).length, 1);
+    assert.equal(calls.filter(x => x.url.endsWith('/answerCallbackQuery')).length, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
