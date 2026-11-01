@@ -122,7 +122,10 @@ test('does not retry as text after an ambiguous network error on photo send', as
 test('sends text-only stories with sendMessage when no image is provided', async () => {
   const originalFetch = globalThis.fetch;
   const methods = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options) => {
+    if (String(url).startsWith('https://example.com/story-1')) {
+      return new Response('no article image metadata', { status: 404 });
+    }
     methods.push(url.split('/').pop());
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };
@@ -169,7 +172,8 @@ test('Telegram webhook rejects an incorrect secret', async () => {
 test('renders proxy URLs as compact clickable labels and hides raw URLs', async () => {
   const originalFetch = globalThis.fetch;
   let payload;
-  globalThis.fetch = async (_url, options) => {
+  globalThis.fetch = async (url, options) => {
+    if (!options?.body) return new Response('no article image metadata', { status: 404 });
     payload = JSON.parse(options.body);
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };
@@ -193,7 +197,8 @@ test('renders proxy URLs as compact clickable labels and hides raw URLs', async 
 test('keeps non-Telegram proxy URLs visible rather than turning them into links', async () => {
   const originalFetch = globalThis.fetch;
   let payload;
-  globalThis.fetch = async (_url, options) => {
+  globalThis.fetch = async (url, options) => {
+    if (!options?.body) return new Response('no article image metadata', { status: 404 });
     payload = JSON.parse(options.body);
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };
@@ -213,7 +218,8 @@ test('keeps non-Telegram proxy URLs visible rather than turning them into links'
 test('renders structured proxy1_url and proxy2_url fields as compact clickable labels', async () => {
   const originalFetch = globalThis.fetch;
   let payload;
-  globalThis.fetch = async (_url, options) => {
+  globalThis.fetch = async (url, options) => {
+    if (!options?.body) return new Response('no article image metadata', { status: 404 });
     payload = JSON.parse(options.body);
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };
