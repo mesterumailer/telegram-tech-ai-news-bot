@@ -152,15 +152,15 @@ test('rejects malformed image metadata', () => {
 test('removes source-channel proxy post links from the news caption and applies RTL marks', () => {
   const caption = buildStoryCaption({
     ...stories[0],
-    summary: 'خلاصه خبر\\n\\n🔐 پروکسی ۱: https://t.me/ProxyMTProto/48256\\n🔐 پروکسی ۲: https://t.me/ProxyMTProto/48255',
+    summary: 'خلاصه خبر\n\n🔐 پروکسی ۱: https://t.me/ProxyMTProto/48256\n🔐 پروکسی ۲: https://t.me/ProxyMTProto/48255',
     proxy1_url: 'https://t.me/ProxyMTProto/48256',
     proxy2_url: 'https://t.me/ProxyMTProto/48255'
   });
-  assert.ok(caption.startsWith('\\u200f'));
-  assert.doesNotMatch(caption, /ProxyMTProto\\/4825[56]/);
-  assert.doesNotMatch(caption, /<a href="https:\\/\\/t\\.me\\/proxy/);
-  assert.match(caption, /<a href="https:\\/\\/t\\.me\\/Tech4UsNews">@Tech4UsNews<\\/a>/);
-  assert.equal(addRtlParagraphMarks('عنوان\\nمتن'), '\\u200fعنوان\\n\\u200fمتن');
+  assert.ok(caption.startsWith('\u200f'));
+  assert.doesNotMatch(caption, /ProxyMTProto\/4825[56]/);
+  assert.doesNotMatch(caption, /<a href="https:\/\/t\.me\/proxy/);
+  assert.match(caption, /<a href="https:\/\/t\.me\/Tech4UsNews">@Tech4UsNews<\/a>/);
+  assert.equal(addRtlParagraphMarks('عنوان\nمتن'), '\u200fعنوان\n\u200fمتن');
 });
 
 test('extracts a direct MTProto URL from the Connect button in a Telegram proxy post', () => {
@@ -203,8 +203,8 @@ test('resolves the two proxy post references into direct Telegram MTProto links'
       }]
     }, {});
     assert.equal(links.length, 2);
-    assert.match(links[0].url, /^https:\\/\\/t\\.me\\/proxy\\?/);
-    assert.match(links[1].url, /^https:\\/\\/t\\.me\\/proxy\\?/);
+    assert.match(links[0].url, /^https:\/\/t\.me\/proxy\?/);
+    assert.match(links[1].url, /^https:\/\/t\.me\/proxy\?/);
     assert.ok(requested.some(url => url.includes('before=48257')));
     assert.ok(requested.some(url => url.includes('before=48256')));
     assert.ok(links.every(link => !link.url.includes('ProxyMTProto/')));
