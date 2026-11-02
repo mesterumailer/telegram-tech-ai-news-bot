@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { validateDigest, sendStoryToChat, buildStoryCaption, buildStoryReviewKeyboard } from '../src/index.js';
+import worker, {
+  validateDigest,
+  sendStoryToChat,
+  buildStoryCaption,
+  buildStoryReviewKeyboard,
+  buildStoryKeyboard,
+  addRtlParagraphMarks,
+  extractProxyDeepLinkFromPostHtml,
+  resolveProxyLinksFromDigest
+} from '../src/index.js';
 
 const stories = [1, 2, 3].map(n => ({
   id: `story-${n}`,
@@ -140,18 +149,80 @@ test('rejects malformed image metadata', () => {
 });
 
 
-test('renders proxy URLs only as embedded proxy1 and proxy2 links', () => {
+test('removes source-channel proxy post links from the news caption and applies RTL marks', () => {
   const caption = buildStoryCaption({
     ...stories[0],
+    summary: 'خلاصه خبر\n\n🔐 پروکسی ۱: https://t.me/ProxyMTProto/48256\n🔐 پروکسی ۲: https://t.me/ProxyMTProto/48255',
     proxy1_url: 'https://t.me/ProxyMTProto/48256',
     proxy2_url: 'https://t.me/ProxyMTProto/48255'
   });
-  assert.match(caption, /<a href="https:\/\/t\.me\/ProxyMTProto\/48256">پروکسی1<\/a>/);
-  assert.match(caption, /<a href="https:\/\/t\.me\/ProxyMTProto\/48255">پروکسی2<\/a>/);
+  assert.ok(caption.startsWith('\u200f'));
+  assert.doesNotMatch(caption, /ProxyMTProto\/4825[56]/);
+  assert.doesNotMatch(caption, /<a href="https:\/\/t\.me\/proxy/);
   assert.match(caption, /<a href="https:\/\/t\.me\/Tech4UsNews">@Tech4UsNews<\/a>/);
-  const visibleText = caption.replace(/<a href="[^"]*">/g, '').replaceAll('</a>', '');
-  assert.doesNotMatch(visibleText, /48256|48255/);
-  assert.match(visibleText, /@Tech4UsNews/);
+  assert.equal(addRtlParagraphMarks('عنوان\nمتن'), '\u200fعنوان\n\u200fمتن');
+});
+
+test('extracts a direct MTProto URL from the Connect button in a Telegram proxy post', () => {
+  const html = '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48256">' +
+    '<a href="https://t.me/proxy?server=149.154.167.51&amp;port=443&amp;secret=eec16575954a98f1f3277fc329ec45a7">Connect</a>' +
+    '</div>';
+  assert.equal(
+    extractProxyDeepLinkFromPostHtml(html, 'ProxyMTProto/48256'),
+    'https://t.me/proxy?server=149.154.167.51&port=443&secret=eec16575954a98f1f3277fc329ec45a7'
+  );
+});
+
+test('builds a direct MTProto URL from Server, Port and Secret fields when no Connect link exists', () => {
+  const html = '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48255">' +
+    '<div>Server: <code>149.154.167.52</code><br>Port: <code>443</code><br>Secret: <code>ee0123456789abcdef0123456789abcdef</code></div>' +
+    '</div>';
+  assert.equal(
+    extractProxyDeepLinkFromPostHtml(html, 'ProxyMTProto/48255'),
+    'https://t.me/proxy?server=149.154.167.52&port=443&secret=ee0123456789abcdef0123456789abcdef'
+  );
+});
+
+test('resolves the two proxy post references into direct Telegram MTProto links', async () => {
+  const originalFetch = globalThis.fetch;
+  const html = [
+    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48256"><a href="https://t.me/proxy?server=149.154.167.51&amp;port=443&amp;secret=eec16575954a98f1f3277fc329ec45a7">Connect</a></div>',
+    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48255"><a href="https://t.me/proxy?server=149.154.167.52&amp;port=443&amp;secret=ee0123456789abcdef0123456789abcdef">Connect</a></div>'
+  ].join('');
+  const requested = [];
+  globalThis.fetch = async url => {
+    requested.push(String(url));
+    return new Response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+  };
+  try {
+    const links = await resolveProxyLinksFromDigest({
+      stories: [{
+        ...stories[0],
+        proxy1_url: 'https://t.me/ProxyMTProto/48256',
+        proxy2_url: 'https://t.me/ProxyMTProto/48255'
+      }]
+    }, {});
+    assert.equal(links.length, 2);
+    assert.match(links[0].url, /^https:\/\/t\.me\/proxy\?/);
+    assert.match(links[1].url, /^https:\/\/t\.me\/proxy\?/);
+    assert.ok(requested.some(url => url.includes('before=48257')));
+    assert.ok(requested.some(url => url.includes('before=48256')));
+    assert.ok(links.every(link => !link.url.includes('ProxyMTProto/')));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('combines admin review callbacks and direct proxy URL buttons in separate rows', () => {
+  const proxies = [
+    { label: 'اتصال پروکسی ۱', url: 'https://t.me/proxy?server=149.154.167.51&port=443&secret=eec16575954a98f1f3277fc329ec45a7' },
+    { label: 'اتصال پروکسی ۲', url: 'https://t.me/proxy?server=149.154.167.52&port=443&secret=ee0123456789abcdef0123456789abcdef' }
+  ];
+  const keyboard = buildStoryKeyboard(stories[0], proxies, true, 'pending');
+  assert.equal(keyboard.inline_keyboard.length, 2);
+  assert.match(keyboard.inline_keyboard[0][0].callback_data, /^approve:/);
+  assert.match(keyboard.inline_keyboard[0][1].callback_data, /^reject:/);
+  assert.deepEqual(keyboard.inline_keyboard[1].map(button => button.url), proxies.map(proxy => proxy.url));
 });
 
 test('rejects non-HTTPS proxy links', () => {

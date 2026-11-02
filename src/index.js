@@ -224,6 +224,9 @@ async function fetchGitHubDigest(env) {
 async function processDigest(digest, env, origin) {
   const validation = validateDigest(digest);
   if (!validation.ok) return { ok: false, error: validation.error };
+  const proxyLinks = env.PUBLISH_ENABLED === "true"
+    ? await resolveProxyLinksFromDigest(digest, env)
+    : [];
   const outcomes = [];
   for (const story of digest.stories) {
     if (env.PUBLISH_ENABLED !== "true") {
@@ -255,7 +258,7 @@ async function processDigest(digest, env, origin) {
     }
 
     try {
-      await sendTelegram(env, story);
+      await sendTelegram(env, story, proxyLinks);
       await upsertStory(env, story, "sent", origin);
       outcomes.push({ id: story.id, status: "sent" });
     } catch (error) {
@@ -274,16 +277,30 @@ function truncateCodePoints(value, maxLength) {
   return Array.from(String(value)).slice(0, Math.max(0, maxLength)).join("");
 }
 
-function buildProxyLinksHtml(story) {
-  const links = [];
-  for (const [field, label] of [["proxy1_url", "پروکسی1"], ["proxy2_url", "پروکسی2"]]) {
-    if (story[field]) links.push(`<a href="${escapeAttribute(story[field])}">${label}</a>`);
-  }
-  return links.length ? links.join(" | ") : "";
+const RTL_MARK = "\u200f";
+
+export function addRtlParagraphMarks(value) {
+  return String(value).split("\n").map(line => line ? `${RTL_MARK}${line}` : line).join("\n");
+}
+
+function stripProxyPostLinks(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .filter(line => {
+      const hasProxyPostUrl = /https?:\/\/t\.me\/(?:s\/)?proxymtproto\/\d+/i.test(line);
+      return !(hasProxyPostUrl && /پروکسی|proxy/i.test(line));
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function buildChannelLinkHtml() {
   return '<a href="https://t.me/Tech4UsNews">@Tech4UsNews</a>';
+}
+
+function visibleHtmlTextLength(value) {
+  return codePointLength(decodeHtmlEntities(String(value).replace(/<[^>]*>/g, "")));
 }
 
 export function buildStoryCaption(story, statusLabel = "") {
@@ -293,29 +310,43 @@ export function buildStoryCaption(story, statusLabel = "") {
     story.published_at ? `📅 ${escapeHtml(story.published_at)}` : "",
     story.image_credit ? `🖼 تصویر: ${escapeHtml(story.image_credit)}` : "",
     statusLabel ? `وضعیت: ${escapeHtml(statusLabel)}` : "",
-    buildProxyLinksHtml(story),
     buildChannelLinkHtml()
   ].filter(Boolean);
-  const fixedLength = codePointLength([ `<b>${escapeHtml(story.title)}</b>`, ...tail ].join("\n\n").replace(/<[^>]*>/g, ""));
-  const summaryBudget = Math.max(0, 1024 - fixedLength - 4);
-  const summary = truncateCodePoints(story.summary, summaryBudget);
-  return [`<b>${escapeHtml(story.title)}</b>`, escapeHtml(summary), ...tail].join("\n\n");
+  const cleanSummary = stripProxyPostLinks(story.summary);
+  const makeCaption = summaryLength => addRtlParagraphMarks([
+    `<b>${escapeHtml(story.title)}</b>`,
+    escapeHtml(truncateCodePoints(cleanSummary, summaryLength)),
+    ...tail
+  ].join("\n\n"));
+
+  let low = 0;
+  let high = codePointLength(cleanSummary);
+  let best = makeCaption(0);
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = makeCaption(middle);
+    if (visibleHtmlTextLength(candidate) <= 1024) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best;
 }
 
 function buildStoryText(story, statusLabel = "") {
   const parts = [
     `<b>${escapeHtml(story.title)}</b>`,
-    escapeHtml(story.summary),
+    escapeHtml(stripProxyPostLinks(story.summary)),
     `🔎 <a href="${escapeAttribute(story.source_url)}">منبع خبر</a>`
   ];
   if (story.category) parts.push(`🏷 ${escapeHtml(story.category)}`);
   if (story.published_at) parts.push(`📅 ${escapeHtml(story.published_at)}`);
   if (story.image_credit) parts.push(`🖼 تصویر: ${escapeHtml(story.image_credit)}`);
   if (statusLabel) parts.push(`وضعیت: <b>${escapeHtml(statusLabel)}</b>`);
-  const proxyLinks = buildProxyLinksHtml(story);
-  if (proxyLinks) parts.push(proxyLinks);
   parts.push(buildChannelLinkHtml());
-  return parts.join("\n\n");
+  return addRtlParagraphMarks(parts.join("\n\n"));
 }
 
 function decodeHtmlEntities(value) {
@@ -336,6 +367,108 @@ function readHtmlAttribute(tag, name) {
     }
   }
   return "";
+}
+
+function buildMtprotoProxyUrl(server, port, secret) {
+  const host = String(server || "").trim();
+  const portNumber = Number(String(port || "").trim());
+  const secretValue = String(secret || "").trim();
+  const validHost = /^[a-z0-9.-]+$/i.test(host) || /^\[[0-9a-f:]+\]$/i.test(host);
+  if (!validHost || host.length > 253 || host.toLowerCase() === "unknown") return null;
+  if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) return null;
+  if (!/^[a-z0-9+/_=-]{16,256}$/i.test(secretValue)) return null;
+  const params = new URLSearchParams({ server: host, port: String(portNumber), secret: secretValue });
+  return `https://t.me/proxy?${params.toString()}`;
+}
+
+function normalizeMtprotoProxyUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    const validHttps = url.protocol === "https:"
+      && ["t.me", "www.t.me", "telegram.me"].includes(url.hostname.toLowerCase())
+      && url.pathname.toLowerCase() === "/proxy";
+    const validTelegram = url.protocol === "tg:" && url.hostname.toLowerCase() === "proxy";
+    if (!validHttps && !validTelegram) return null;
+    return buildMtprotoProxyUrl(url.searchParams.get("server"), url.searchParams.get("port"), url.searchParams.get("secret"));
+  } catch {
+    return null;
+  }
+}
+
+export function extractProxyDeepLinkFromPostHtml(html, postPath) {
+  const source = String(html || "");
+  const markerPattern = /data-post\s*=\s*["']([^"']+)["']/gi;
+  let marker;
+  while ((marker = markerPattern.exec(source)) !== null) {
+    if (marker[1].toLowerCase() !== String(postPath).toLowerCase()) continue;
+    const blockStart = source.lastIndexOf("<div", marker.index);
+    const nextMarkerPattern = /data-post\s*=\s*["']([^"']+)["']/gi;
+    nextMarkerPattern.lastIndex = markerPattern.lastIndex;
+    const nextMarker = nextMarkerPattern.exec(source);
+    const blockEnd = nextMarker ? source.lastIndexOf("<div", nextMarker.index) : source.length;
+    const block = source.slice(blockStart >= 0 ? blockStart : 0, blockEnd > blockStart ? blockEnd : source.length);
+
+    for (const anchor of block.match(/<a\b[^>]*>/gi) || []) {
+      const directLink = normalizeMtprotoProxyUrl(readHtmlAttribute(anchor, "href"));
+      if (directLink) return directLink;
+    }
+
+    const text = decodeHtmlEntities(
+      block
+        .replace(/<br\s*\/?\s*>/gi, "\n")
+        .replace(/<\/(?:div|p|code)>/gi, "\n")
+        .replace(/<[^>]*>/g, " ")
+    );
+    const capture = label => {
+      const expression = new RegExp("(?:^|\\s)" + label + "\\s*:\\s*['\"]?([^\\s'\"<>]+)", "i");
+      return text.match(expression)?.[1] || "";
+    };
+    return buildMtprotoProxyUrl(capture("Server"), capture("Port"), capture("Secret"));
+  }
+  return null;
+}
+
+function extractProxyPostReference(value) {
+  try {
+    const url = new URL(String(value || ""));
+    if (!["t.me", "www.t.me", "telegram.me"].includes(url.hostname.toLowerCase())) return null;
+    const match = url.pathname.match(/^\/(?:s\/)?proxymtproto\/(\d+)$/i);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveProxyLinksFromDigest(digest, env) {
+  const refs = new Map();
+  for (const story of digest?.stories || []) {
+    for (const [field, label] of [["proxy1_url", "اتصال پروکسی ۱"], ["proxy2_url", "اتصال پروکسی ۲"]]) {
+      const postId = extractProxyPostReference(story?.[field]);
+      if (postId && !refs.has(postId)) refs.set(postId, label);
+    }
+  }
+
+  const resolved = await Promise.all([...refs.entries()].slice(0, 2).map(async ([postId, label]) => {
+    try {
+      const pageUrl = `https://t.me/s/ProxyMTProto?before=${Number(postId) + 1}`;
+      const response = await fetch(pageUrl, {
+        headers: {
+          "accept": "text/html,application/xhtml+xml",
+          "user-agent": "Mozilla/5.0 (compatible; TelegramNewsPublisher/1.0)"
+        },
+        redirect: "follow"
+      });
+      if (!response.ok) throw new Error(`Telegram proxy post fetch failed with HTTP ${response.status}`);
+      const html = (await response.text()).slice(0, 1_000_000);
+      const url = extractProxyDeepLinkFromPostHtml(html, `ProxyMTProto/${postId}`);
+      if (!url) throw new Error("MTProto connection details were not found in the proxy post");
+      return { label, url };
+    } catch (error) {
+      await logEvent(env, "proxy_resolution_failed", `${postId}: ${safeError(error)}`);
+      return null;
+    }
+  }));
+  return resolved.filter(Boolean);
 }
 
 function findPageImage(html) {
@@ -429,9 +562,10 @@ export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLab
   }
 }
 
-async function sendTelegram(env, story) {
+async function sendTelegram(env, story, proxyLinks = []) {
   if (!env.TELEGRAM_CHANNEL_ID) throw new Error("Missing Telegram channel ID");
-  return sendStoryToChat(env, env.TELEGRAM_CHANNEL_ID, story);
+  const keyboard = buildStoryKeyboard(story, proxyLinks, false);
+  return sendStoryToChat(env, env.TELEGRAM_CHANNEL_ID, story, keyboard);
 }
 
 async function upsertStory(env, story, status, origin, error = null) {
@@ -532,18 +666,42 @@ function storyCallbackToken(storyId) {
   return hash.toString(36);
 }
 
-export function buildStoryReviewKeyboard(story) {
-  const token = storyCallbackToken(story.id);
-  const keyboard = { inline_keyboard: [[
-    { text: "✅ تأیید و انتشار", callback_data: `approve:${token}` },
-    { text: "❌ رد خبر", callback_data: `reject:${token}` }
-  ]] };
-  for (const button of keyboard.inline_keyboard[0]) {
-    if (new TextEncoder().encode(button.callback_data).length > 64) {
-      throw new Error("Telegram callback_data exceeds the 64-byte limit");
+export function buildStoryKeyboard(story, proxyLinks = [], adminView = false, reviewStatus = "pending") {
+  const rows = [];
+  if (adminView) {
+    if (reviewStatus === "pending") {
+      const token = storyCallbackToken(story.id);
+      rows.push([
+        { text: "✅ تأیید و انتشار", callback_data: `approve:${token}` },
+        { text: "❌ رد خبر", callback_data: `reject:${token}` }
+      ]);
+    } else {
+      rows.push([{ text: "↻ به‌روزرسانی فهرست", callback_data: "latest" }]);
     }
   }
-  return keyboard;
+
+  const proxyButtons = (proxyLinks || []).slice(0, 2).map((proxy, index) => {
+    const url = normalizeMtprotoProxyUrl(proxy?.url);
+    if (!url) return null;
+    return {
+      text: proxy.label || (index === 0 ? "اتصال پروکسی ۱" : "اتصال پروکسی ۲"),
+      url
+    };
+  }).filter(Boolean);
+  if (proxyButtons.length) rows.push(proxyButtons);
+
+  for (const row of rows) {
+    for (const button of row) {
+      if (button.callback_data && new TextEncoder().encode(button.callback_data).length > 64) {
+        throw new Error("Telegram callback_data exceeds the 64-byte limit");
+      }
+    }
+  }
+  return rows.length ? { inline_keyboard: rows } : undefined;
+}
+
+export function buildStoryReviewKeyboard(story, proxyLinks = []) {
+  return buildStoryKeyboard(story, proxyLinks, true, "pending");
 }
 
 function isAdmin(userId, env) {
@@ -630,6 +788,7 @@ async function showLatestNews(env, chatId, adminView = true) {
   if (!digest) return sendBotMessage(env, chatId, "هنوز فایل اخبار آماده‌ای در GitHub وجود ندارد.");
   const validation = validateDigest(digest);
   if (!validation.ok) return sendBotMessage(env, chatId, `بسته خبری معتبر نیست: ${validation.error}`);
+  const proxyLinks = await resolveProxyLinksFromDigest(digest, env);
   if (adminView) await queueDigestForReview(digest, env, "admin_preview");
   const intro = adminView
     ? `🗞 آخرین بسته خبری\\nشناسه: ${escapeHtml(digest.batch_id)}\\nتعداد خبر: ${digest.stories.length}\\n\\nهر خبر را جداگانه بررسی و تأیید یا رد کن.`
@@ -641,9 +800,9 @@ async function showLatestNews(env, chatId, adminView = true) {
     if (adminView) {
       const status = await env.DB.prepare("SELECT review_status FROM story_review_queue WHERE story_id = ?").bind(story.id).first();
       statusLabel = status?.review_status === "approved" ? "تأیید شده" : status?.review_status === "rejected" ? "رد شده" : "در انتظار بررسی";
-      keyboard = status?.review_status === "pending"
-        ? buildStoryReviewKeyboard(story)
-        : { inline_keyboard: [[{ text: "↻ به‌روزرسانی فهرست", callback_data: "latest" }]] };
+      keyboard = buildStoryKeyboard(story, proxyLinks, true, status?.review_status || "pending");
+    } else {
+      keyboard = buildStoryKeyboard(story, proxyLinks, false);
     }
     await sendStoryToChat(env, chatId, story, keyboard, statusLabel);
   }
@@ -721,7 +880,8 @@ async function publishReviewedStory(env, story) {
     ON CONFLICT(story_id) DO UPDATE SET status='pending', origin='telegram_approval', last_error=NULL, updated_at=CURRENT_TIMESTAMP
     WHERE published_stories.status='dry_run'`)
     .bind(story.id, story.source_url, story.title).run();
-  await sendTelegram(env, story);
+  const proxyLinks = await resolveProxyLinksFromDigest({ stories: [story] }, env);
+  await sendTelegram(env, story, proxyLinks);
   await upsertStory(env, story, "sent", "telegram_approval");
 }
 
@@ -737,7 +897,7 @@ async function setSetting(env, key, value) {
 
 async function sendBotMessage(env, chatId, text, replyMarkup, parseMode) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error("Missing TELEGRAM_BOT_TOKEN");
-  const payload = { chat_id: chatId, text, disable_web_page_preview: true };
+  const payload = { chat_id: chatId, text: addRtlParagraphMarks(text), disable_web_page_preview: true };
   if (replyMarkup) payload.reply_markup = replyMarkup;
   if (parseMode) payload.parse_mode = parseMode;
   const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
