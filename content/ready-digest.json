@@ -1,37 +1,34 @@
 {
-  "batch_id": "2026-11-02-daily-tech-ai-briefing",
-  "generated_at": "2026-11-02T03:57:15Z",
+  "batch_id": "2026-11-03-daily-tech-ai-briefing",
+  "generated_at": "2026-11-02T23:24:06Z",
   "language": "fa",
   "stories": [
     {
-      "id": "south-korea-2027-budget-ai-physical-ai-datacenters-20261102",
-      "title": "کره‌جنوبی بودجه هوش مصنوعی را تقریباً دو برابر می‌کند",
-      "summary": "رئیس‌جمهور کره‌جنوبی خواستار اختصاص ۲۱.۳ تریلیون وون (حدود ۱۶ میلیارد دلار) در بودجه ۲۰۲۷ به هوش مصنوعی و سه محور نیمه‌رساناها، هوش مصنوعی فیزیکی و مراکز داده شد؛ رقمی نزدیک به دو برابر امسال. این مبلغ بخشی از پیشنهاد بودجه دولت است و هنوز باید به تصویب پارلمان برسد.\n\n🔐 پروکسی ۱: https://t.me/ProxyMTProto/48256\n🔐 پروکسی ۲: https://t.me/ProxyMTProto/48255",
-      "source_url": "https://www.reuters.com/world/asia-pacific/south-koreas-lee-vows-make-bold-ai-investment-record-budget-push-2026-11-02/",
-      "category": "سیاست‌گذاری و سرمایه‌گذاری هوش مصنوعی",
-      "published_at": "2026-11-02T02:37:00Z",
-      "proxy1_url": "https://t.me/ProxyMTProto/48256",
-      "proxy2_url": "https://t.me/ProxyMTProto/48255"
+      "id": "marvell-lumentum-acquisition-ai-connectivity-20261102",
+      "title": "مارول برای توسعه اتصال نوری مراکز داده هوش مصنوعی، لومنتم را می‌خرد",
+      "summary": "مارول در ۲ نوامبر توافق قطعی برای خرید شرکت Lumentum را در معامله‌ای تمام‌سهامی با ارزش بنگاه حدود ۱۱۵ میلیارد دلار اعلام کرد. طبق توافق، سهام‌داران Lumentum به‌ازای هر سهم ۴.۵ سهم Marvell دریافت می‌کنند و پس از نهایی‌شدن معامله حدود ۳۳ درصد شرکت ترکیبی را در اختیار خواهند داشت. دو شرکت می‌گویند ترکیب تراشه‌ها، اتصالات نوری، لیزرها و سوئیچ‌های نوری می‌تواند پهنای‌باند و بهره‌وری انرژی شبکه‌های مراکز داده هوش مصنوعی را بهبود دهد. نهایی‌شدن معامله برای نیمه نخست ۲۰۲۸ پیش‌بینی شده و به تأیید سهام‌داران و نهادهای ناظر وابسته است.",
+      "source_url": "https://investor.marvell.com/news-events/press-releases/detail/1040/marvell-and-lumentum-to-combine-creating-a-category-leader-in-ai-connectivity",
+      "category": "تراشه‌ها و زیرساخت هوش مصنوعی",
+      "published_at": "2026-11-02",
+      "image_url": "https://www.lumentum.com/sites/default/files/inline-images/OFC26_OCS.jpg",
+      "image_credit": "Lumentum",
+      "image_alt": "سوئیچ مدار نوری R300 شرکت Lumentum که برای شبکه‌های مراکز داده و اتصال خوشه‌های هوش مصنوعی طراحی شده است."
     },
     {
-      "id": "china-embodied-ai-robotics-brains-investment-20261101",
-      "title": "رقابت رباتیک چین از نمایش حرکتی به توسعه «مغز» هوش مصنوعی رسیده است",
-      "summary": "شرکت‌های رباتیک چین سرمایه‌گذاری را از سخت‌افزار نمایشی به سامانه‌های هوش مصنوعیِ فهم محیط و یادگیری مهارت‌های تازه منتقل می‌کنند. برآورد ITjuzi که رویترز نقل کرده، سرمایه‌گذاری هوش مصنوعی فیزیکی چین را در نیمه نخست ۲۰۲۶ به ۹۳.۵ میلیارد یوان (۱۳ میلیارد دلار) در ۳۲۲ معامله رسانده؛ پنج برابر مدت مشابه سال قبل. تعمیم قابل‌اعتماد مهارت‌ها به محیط‌های ناآشنا همچنان چالش اصلی است.\n\n🔐 پروکسی ۱: https://t.me/ProxyMTProto/48256\n🔐 پروکسی ۲: https://t.me/ProxyMTProto/48255",
-      "source_url": "https://www.reuters.com/world/china/chinas-robot-makers-have-mastered-moves-now-comes-race-brains-2026-11-01/",
-      "category": "رباتیک و هوش مصنوعی فیزیکی",
-      "published_at": "2026-11-01T23:08:00Z",
-      "proxy1_url": "https://t.me/ProxyMTProto/48256",
-      "proxy2_url": "https://t.me/ProxyMTProto/48255"
+      "id": "adnoc-openai-g42-frontier-energy-ai-20261102",
+      "title": "ADNOC با OpenAI و G42 برای گسترش هوش مصنوعی عاملی در صنعت انرژی قرارداد بست",
+      "summary": "شرکت انرژی ADNOC در ۲ نوامبر توافقی چندساله با OpenAI و G42 امضا کرد تا فناوری OpenAI Frontier را در عملیات انرژی، از برنامه‌ریزی میدان‌های نفتی تا پالایش، لجستیک، فروش و تجارت، به‌کار گیرد. در گام نخست، مدل‌ها و عامل‌های هوش مصنوعی داده‌های چنددهه‌ای هزاران چاه، مخازن و تأسیسات را برای یکپارچه‌سازی برنامه‌ریزی توسعه میدان تحلیل می‌کنند. زیرساخت پردازش در امارات مستقر خواهد بود و تصمیم‌های مهم همچنان با نظارت متخصصان انسانی انجام می‌شوند.",
+      "source_url": "https://www.adnoc.ae/media-center/news/2026/11/ADNOC-Signs-Landmark-Partnership-Agreement-with-OpenAI",
+      "category": "هوش مصنوعی صنعتی و انرژی",
+      "published_at": "2026-11-02"
     },
     {
-      "id": "hsbc-hong-kong-ai-institute-2027-20261102",
-      "title": "HSBC در هنگ‌کنگ مؤسسه هوش مصنوعی راه‌اندازی می‌کند",
-      "summary": "HSBC اعلام کرد در سه‌ماهه نخست ۲۰۲۷ مؤسسه‌ای برای هوش مصنوعی و فناوری‌های نوظهور در هنگ‌کنگ راه‌اندازی می‌کند و دانشگاه علم و فناوری هنگ‌کنگ شریک دانشگاهی اصلی آن خواهد بود. این طرح پس از راه‌اندازی مرکز مشابه در سنگاپور مطرح شده است؛ بانک همچنین آموزش هوش مصنوعی را برای حدود ۲۰۰ هزار کارمند خود در سراسر جهان گسترش می‌دهد.\n\n🔐 پروکسی ۱: https://t.me/ProxyMTProto/48256\n🔐 پروکسی ۲: https://t.me/ProxyMTProto/48255",
-      "source_url": "https://www.reuters.com/world/asia-pacific/hsbc-open-hong-kong-ai-institute-following-singapore-launch-2026-11-02/",
-      "category": "هوش مصنوعی در بانکداری و کسب‌وکار",
-      "published_at": "2026-11-02T03:34:00Z",
-      "proxy1_url": "https://t.me/ProxyMTProto/48256",
-      "proxy2_url": "https://t.me/ProxyMTProto/48255"
+      "id": "anthropic-q3-revenue-compute-commitments-ipo-amendment-20261102",
+      "title": "پرونده IPO آنتروپیک از درآمد فصلی ۱۷ میلیارد دلاری و تعهدات سنگین پردازشی پرده برداشت",
+      "summary": "آنتروپیک در اصلاحیهٔ ۲ نوامبر پروندهٔ عرضهٔ اولیه اعلام کرد درآمد سه‌ماههٔ سوم ۲۰۲۶ آن به حدود ۱۷ میلیارد دلار رسیده، اما در همان فصل ۲۳.۳ میلیارد دلار زیان خالص ثبت کرده است. شرکت همچنین حدود ۸۹۵.۴ میلیارد دلار تعهد خرید و اجارهٔ مرتبط با رایانش و زیرساخت را افشا کرد که نزدیک به ۷۰ میلیارد دلار آن طی ۱۲ ماه آینده سررسید می‌شود. طبق گزارش AP، بخش بزرگی از زیان دوره به تعدیلات حسابداری مرتبط با قراردادهای تأمین مالی مربوط است؛ بنابراین رقم زیان خالص را نباید معادل هزینهٔ عملیاتی همان فصل دانست.",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/2130357/000162828026068676/anthropicpbc-sx1ax1.htm",
+      "category": "کسب‌وکار هوش مصنوعی و بازار سرمایه",
+      "published_at": "2026-11-02"
     }
   ]
 }
