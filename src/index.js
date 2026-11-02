@@ -280,7 +280,7 @@ function truncateCodePoints(value, maxLength) {
 const RTL_MARK = "\u200f";
 
 export function addRtlParagraphMarks(value) {
-  return String(value).split("\n").map(line => line ? \`\${RTL_MARK}\${line}\` : line).join("\n");
+  return String(value).split("\n").map(line => line ? `${RTL_MARK}${line}` : line).join("\n");
 }
 
 function stripProxyPostLinks(value) {
@@ -305,16 +305,16 @@ function visibleHtmlTextLength(value) {
 
 export function buildStoryCaption(story, statusLabel = "") {
   const tail = [
-    \`<a href="\${escapeAttribute(story.source_url)}">🔎 منبع خبر</a>\`,
-    story.category ? \`🏷 \${escapeHtml(story.category)}\` : "",
-    story.published_at ? \`📅 \${escapeHtml(story.published_at)}\` : "",
-    story.image_credit ? \`🖼 تصویر: \${escapeHtml(story.image_credit)}\` : "",
-    statusLabel ? \`وضعیت: \${escapeHtml(statusLabel)}\` : "",
+    `<a href="${escapeAttribute(story.source_url)}">🔎 منبع خبر</a>`,
+    story.category ? `🏷 ${escapeHtml(story.category)}` : "",
+    story.published_at ? `📅 ${escapeHtml(story.published_at)}` : "",
+    story.image_credit ? `🖼 تصویر: ${escapeHtml(story.image_credit)}` : "",
+    statusLabel ? `وضعیت: ${escapeHtml(statusLabel)}` : "",
     buildChannelLinkHtml()
   ].filter(Boolean);
   const cleanSummary = stripProxyPostLinks(story.summary);
   const makeCaption = summaryLength => addRtlParagraphMarks([
-    \`<b>\${escapeHtml(story.title)}</b>\`,
+    `<b>${escapeHtml(story.title)}</b>`,
     escapeHtml(truncateCodePoints(cleanSummary, summaryLength)),
     ...tail
   ].join("\n\n"));
@@ -337,14 +337,14 @@ export function buildStoryCaption(story, statusLabel = "") {
 
 function buildStoryText(story, statusLabel = "") {
   const parts = [
-    \`<b>\${escapeHtml(story.title)}</b>\`,
+    `<b>${escapeHtml(story.title)}</b>`,
     escapeHtml(stripProxyPostLinks(story.summary)),
-    \`🔎 <a href="\${escapeAttribute(story.source_url)}">منبع خبر</a>\`
+    `🔎 <a href="${escapeAttribute(story.source_url)}">منبع خبر</a>`
   ];
-  if (story.category) parts.push(\`🏷 \${escapeHtml(story.category)}\`);
-  if (story.published_at) parts.push(\`📅 \${escapeHtml(story.published_at)}\`);
-  if (story.image_credit) parts.push(\`🖼 تصویر: \${escapeHtml(story.image_credit)}\`);
-  if (statusLabel) parts.push(\`وضعیت: <b>\${escapeHtml(statusLabel)}</b>\`);
+  if (story.category) parts.push(`🏷 ${escapeHtml(story.category)}`);
+  if (story.published_at) parts.push(`📅 ${escapeHtml(story.published_at)}`);
+  if (story.image_credit) parts.push(`🖼 تصویر: ${escapeHtml(story.image_credit)}`);
+  if (statusLabel) parts.push(`وضعیت: <b>${escapeHtml(statusLabel)}</b>`);
   parts.push(buildChannelLinkHtml());
   return addRtlParagraphMarks(parts.join("\n\n"));
 }
@@ -374,11 +374,11 @@ function buildMtprotoProxyUrl(server, port, secret) {
   const portNumber = Number(String(port || "").trim());
   const secretValue = String(secret || "").trim();
   const validHost = /^[a-z0-9.-]+$/i.test(host) || /^\[[0-9a-f:]+\]$/i.test(host);
-  if (!validHost || host.length > 253) return null;
+  if (!validHost || host.length > 253 || host.toLowerCase() === "unknown") return null;
   if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) return null;
   if (!/^[a-z0-9+/_=-]{16,256}$/i.test(secretValue)) return null;
   const params = new URLSearchParams({ server: host, port: String(portNumber), secret: secretValue });
-  return \`https://t.me/proxy?\${params.toString()}\`;
+  return `https://t.me/proxy?${params.toString()}`;
 }
 
 function normalizeMtprotoProxyUrl(value) {
@@ -402,7 +402,9 @@ export function extractProxyDeepLinkFromPostHtml(html, postPath) {
   while ((marker = markerPattern.exec(source)) !== null) {
     if (marker[1].toLowerCase() !== String(postPath).toLowerCase()) continue;
     const blockStart = source.lastIndexOf("<div", marker.index);
-    const nextMarker = markerPattern.exec(source);
+    const nextMarkerPattern = /data-post\s*=\s*["']([^"']+)["']/gi;
+    nextMarkerPattern.lastIndex = markerPattern.lastIndex;
+    const nextMarker = nextMarkerPattern.exec(source);
     const blockEnd = nextMarker ? source.lastIndexOf("<div", nextMarker.index) : source.length;
     const block = source.slice(blockStart >= 0 ? blockStart : 0, blockEnd > blockStart ? blockEnd : source.length);
 
@@ -448,7 +450,7 @@ export async function resolveProxyLinksFromDigest(digest, env) {
 
   const resolved = await Promise.all([...refs.entries()].slice(0, 2).map(async ([postId, label]) => {
     try {
-      const pageUrl = \`https://t.me/s/ProxyMTProto?before=\${Number(postId) + 1}\`;
+      const pageUrl = `https://t.me/s/ProxyMTProto?before=${Number(postId) + 1}`;
       const response = await fetch(pageUrl, {
         headers: {
           "accept": "text/html,application/xhtml+xml",
@@ -456,13 +458,13 @@ export async function resolveProxyLinksFromDigest(digest, env) {
         },
         redirect: "follow"
       });
-      if (!response.ok) throw new Error(\`Telegram proxy post fetch failed with HTTP \${response.status}\`);
+      if (!response.ok) throw new Error(`Telegram proxy post fetch failed with HTTP ${response.status}`);
       const html = (await response.text()).slice(0, 1_000_000);
-      const url = extractProxyDeepLinkFromPostHtml(html, \`ProxyMTProto/\${postId}\`);
+      const url = extractProxyDeepLinkFromPostHtml(html, `ProxyMTProto/${postId}`);
       if (!url) throw new Error("MTProto connection details were not found in the proxy post");
       return { label, url };
     } catch (error) {
-      await logEvent(env, "proxy_resolution_failed", \`\${postId}: \${safeError(error)}\`);
+      await logEvent(env, "proxy_resolution_failed", `${postId}: ${safeError(error)}`);
       return null;
     }
   }));
@@ -670,8 +672,8 @@ export function buildStoryKeyboard(story, proxyLinks = [], adminView = false, re
     if (reviewStatus === "pending") {
       const token = storyCallbackToken(story.id);
       rows.push([
-        { text: "✅ تأیید و انتشار", callback_data: \`approve:\${token}\` },
-        { text: "❌ رد خبر", callback_data: \`reject:\${token}\` }
+        { text: "✅ تأیید و انتشار", callback_data: `approve:${token}` },
+        { text: "❌ رد خبر", callback_data: `reject:${token}` }
       ]);
     } else {
       rows.push([{ text: "↻ به‌روزرسانی فهرست", callback_data: "latest" }]);
@@ -785,12 +787,12 @@ async function showLatestNews(env, chatId, adminView = true) {
   const digest = await fetchGitHubDigest(env);
   if (!digest) return sendBotMessage(env, chatId, "هنوز فایل اخبار آماده‌ای در GitHub وجود ندارد.");
   const validation = validateDigest(digest);
-  if (!validation.ok) return sendBotMessage(env, chatId, \`بسته خبری معتبر نیست: \${validation.error}\`);
+  if (!validation.ok) return sendBotMessage(env, chatId, `بسته خبری معتبر نیست: ${validation.error}`);
   const proxyLinks = await resolveProxyLinksFromDigest(digest, env);
   if (adminView) await queueDigestForReview(digest, env, "admin_preview");
   const intro = adminView
-    ? \`🗞 آخرین بسته خبری\\nشناسه: \${escapeHtml(digest.batch_id)}\\nتعداد خبر: \${digest.stories.length}\\n\\nهر خبر را جداگانه بررسی و تأیید یا رد کن.\`
-    : \`🗞 آخرین خبرهای آماده\\nتعداد خبر: \${digest.stories.length}\`;
+    ? `🗞 آخرین بسته خبری\\nشناسه: ${escapeHtml(digest.batch_id)}\\nتعداد خبر: ${digest.stories.length}\\n\\nهر خبر را جداگانه بررسی و تأیید یا رد کن.`
+    : `🗞 آخرین خبرهای آماده\\nتعداد خبر: ${digest.stories.length}`;
   await sendBotMessage(env, chatId, intro, undefined, "HTML");
   for (const story of digest.stories) {
     let keyboard;
