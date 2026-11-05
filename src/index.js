@@ -1,8 +1,24 @@
+import { refreshNewsFeeds, listNewsFeedCandidates } from "./news-feed.js";
+
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/feed/candidates") {
+      try {
+        const rawLimit = Number(url.searchParams.get("limit") || 60);
+        const items = await listNewsFeedCandidates(env.DB, rawLimit);
+        return json({
+          ok: true,
+          count: items.length,
+          generated_at: new Date().toISOString(),
+          items
+        });
+      } catch (error) {
+        return json({ ok: false, error: safeError(error) }, 503);
+      }
+    }
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ ok: true, service: "telegram-news-publisher", mode: env.PUBLISH_ENABLED === "true" ? "publish" : "dry-run" });
     }
@@ -114,6 +130,15 @@ export default {
       try {
         try { await pruneTelegramWebhookUpdates(env); }
         catch (error) { await logEvent(env, "webhook_update_prune_failed", safeError(error)); }
+
+        // Refresh trusted RSS sources on every Cron run. Feed discovery is separate
+        // from editorial approval: only the GPT-prepared three-story digest is queued.
+        try {
+          const feedReport = await refreshNewsFeeds(env);
+          await logEvent(env, "news_feeds_refreshed", JSON.stringify(feedReport));
+        } catch (error) {
+          await logEvent(env, "news_feed_refresh_failed", safeError(error));
+        }
 
         // Refresh the persistent queue from the current GitHub digest. If GitHub is
         // temporarily unavailable, the already queued stories can still be processed.
