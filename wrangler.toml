@@ -4,7 +4,8 @@ compatibility_date = "2026-10-29"
 keep_vars = true
 
 [triggers]
-# Every 6 hours (UTC). Cron timing is approximate, not a guarantee of exact minute execution.
+# Every 6 hours (UTC). Each run publishes at most one pending story from the D1 queue.
+# keep_vars=true preserves existing Dashboard variables; confirm the live PUBLISH_ENABLED value there.
 crons = ["0 */6 * * *"]
 
 [[d1_databases]]
@@ -14,7 +15,7 @@ database_id = "9e2851cf-cb66-4c46-b50f-beddc71184ad"
 migrations_dir = "migrations"
 
 [vars]
-PUBLISH_ENABLED = "false"
+PUBLISH_ENABLED = "true"
 TELEGRAM_TEST_ENABLED = "false"
 GITHUB_OWNER = "mesterumailer"
 GITHUB_REPO = "telegram-tech-ai-news-bot"
