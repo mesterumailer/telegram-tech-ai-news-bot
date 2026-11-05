@@ -14,8 +14,10 @@
 
 ## ساختار فایل‌ها
 
-- `src/index.js` — Worker، زمان‌بندی، دریافت فایل GitHub، اعتبارسنجی، ارسال تلگرام و مسیر جایگزین
+- `src/index.js` — Worker، زمان‌بندی، endpointها، دریافت فایل GitHub، اعتبارسنجی و ارسال تلگرام
+- `src/news-feed.js` — دریافت، پارس و ذخیرهٔ فیدهای RSS فناوری و AI
 - `migrations/0001_init.sql` — جداول D1 برای وضعیت خبرها و گزارش رویدادها
+- `migrations/0004_news_feed_items.sql` — جدول پایدار آیتم‌های RSS
 - `examples/ready-digest.json` — نمونه ساختار داده؛ خبر نمونه است و نباید منتشر شود
 - `wrangler.toml` — تنظیمات Worker و Cron هر ۶ ساعت
 - `tests/worker.test.js` — تست‌های اولیه اعتبارسنجی
@@ -110,7 +112,7 @@ Publication behavior:
 - Only administrative commands and callback actions are restricted by `TELEGRAM_ADMIN_USER_ID`; public users cannot approve/reject stories or change publication settings. Webhook requests are verified with `TELEGRAM_WEBHOOK_SECRET`.
 
 Required Cloudflare setup after deploying this version:
-1. Apply all pending D1 migrations, including `0002_telegram_admin_ui.sql` and `0003_telegram_webhook_idempotency.sql`, to the existing D1 database.
+1. Apply all pending D1 migrations, including `0002_telegram_admin_ui.sql`, `0003_telegram_webhook_idempotency.sql` and `0004_news_feed_items.sql`, to the existing D1 database.
 2. Add `TELEGRAM_ADMIN_USER_ID` as a Text variable containing the numeric Telegram user ID of the manager.
 3. Add `TELEGRAM_WEBHOOK_SECRET` as a Secret. Use a random 32+ character value containing only letters, digits, underscores or hyphens.
 4. Call `POST /admin/register-webhook` with `Authorization: Bearer <ADMIN_SECRET>`. This securely registers the Worker URL with Telegram; the bot token is not needed in the PowerShell request.
