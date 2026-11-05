@@ -1,16 +1,16 @@
 # ربات اخبار فناوری و هوش مصنوعی تلگرام — فاز اول
 
-این پروژه مسیر انتشار خبرهای آماده را پیاده‌سازی می‌کند. **تولید خبر توسط ChatGPT هنوز به اتصال نوشتن خودکار GitHub وابسته است و در این فاز تضمین نشده**؛ مسیر جایگزین برای ارسال دستی JSON از طریق endpoint امن Worker فراهم شده است.
+این پروژه از دو زمان‌بندی مستقل استفاده می‌کند: تولید روزانهٔ بستهٔ سه‌خبری و به‌روزرسانی فایل GitHub، و Cron کلودفلر که هر ۶ ساعت صف D1 را بررسی می‌کند و در هر اجرا حداکثر یک خبر منتشرنشده را ارسال می‌کند. مسیر جایگزین برای ارسال دستی JSON نیز از طریق endpoint امن Worker فراهم است.
 
 ## طرح مورد توافق
 
-- ChatGPT Free: آماده‌سازی حداکثر ۳ خبر مهم فارسی روزانه و همچنین تولید دستی هنگام درخواست کاربر. قابلیت نوشتن مستقیم در GitHub باید با حساب و اتصال واقعی آزمایش شود؛ اتصال به‌تنهایی تضمین آن نیست.
+- زمان‌بندی روزانهٔ ChatGPT: آماده‌سازی دقیقاً ۳ خبر تازهٔ فارسی و ثبت بسته در `content/ready-digest.json` شاخهٔ `main`؛ این زمان‌بندی باید در بخش Automations فعال باشد.
 - GitHub: نگهداری فایل `content/ready-digest.json` با قالب مشخص.
-- Cloudflare Worker: بررسی فایل هر ۶ ساعت و انتشار خبرهای جدید در کانال.
+- Cloudflare Worker: بررسی فایل GitHub و صف پایدار D1 هر ۶ ساعت؛ در هر اجرا فقط یک خبر منتشرنشده را ارسال می‌کند. اگر صف خالی باشد، هیچ پیامی نمی‌فرستد.
 - Cloudflare D1: ثبت شناسه خبرها و وضعیت ارسال برای جلوگیری از تکرار در اجرای مجدد.
 - مسیر جایگزین: `POST /admin/submit` با `Authorization: Bearer <ADMIN_SECRET>` برای ارسال JSON آماده‌شده.
 - مسیر آزمایش واقعی تلگرام: `POST /admin/test-message`؛ فقط با `TELEGRAM_TEST_ENABLED=true` و `ADMIN_SECRET` فعال می‌شود و یک پیام ثابت و مشخصاً آزمایشی می‌فرستد. این مسیر مستقل از `PUBLISH_ENABLED` است و Digest سه‌خبری را تغییر نمی‌دهد.
-- انتشار عمومی در شروع غیرفعال است (`PUBLISH_ENABLED=false`).
+- انتشار خودکار با `PUBLISH_ENABLED=true` فعال می‌شود. این کلید، توقف اضطراری سراسری است.
 
 ## ساختار فایل‌ها
 
@@ -33,7 +33,7 @@
 6. `TELEGRAM_CHANNEL_ID` را به عنوان secret یا متغیر غیرمحرمانه تنظیم کنید؛ ربات باید مجوز انتشار در کانال داشته باشد.
 7. در `wrangler.toml` مقادیر `GITHUB_OWNER`، `GITHUB_REPO`، `GITHUB_BRANCH` و `GITHUB_PATH` را تنظیم کنید.
 8. اجرای مهاجرت D1: `npx wrangler d1 migrations apply telegram-news-state --remote`
-9. ابتدا با `PUBLISH_ENABLED=false` مستقر کنید و `/health` و مسیر دستی را آزمایش کنید. فقط پس از تست end-to-end مقدار را به `true` تغییر دهید.
+9. برای انتشار خودکار، `PUBLISH_ENABLED=true` را در تنظیمات محیط Production Worker قرار دهید و Worker را deploy کنید؛ سپس `/health` باید `mode: publish` نشان دهد. چون `keep_vars=true` است، مقدار متغیری که از قبل در Dashboard ذخیره شده در زمان deploy حفظ می‌شود؛ اگر مقدار زنده `false` باشد، باید همان‌جا به `true` تغییر کند.
 
 ## قالب خروجی ChatGPT
 
@@ -95,8 +95,9 @@ Admin commands (manager only):
 
 Publication behavior:
 - The persisted D1 setting `publication_mode` defaults to `manual`.
-- In manual mode, scheduled and API-submitted digests enter `story_review_queue`; only a manager's approval can publish an individual story.
-- In auto mode, the scheduled Worker may publish valid digest stories, but only when the independent master switch `PUBLISH_ENABLED=true`.
+- The scheduled Worker always imports the current digest into the persistent `story_review_queue`, independently of the admin UI's manual/API mode.
+- When `PUBLISH_ENABLED=true`, each scheduled execution atomically claims and publishes at most one pending story. Later six-hour executions continue with the next pending story.
+- The admin UI's `publication_mode` setting applies to the manual `/admin/submit` route; it does not pause the six-hour scheduled publisher.
 - `PUBLISH_ENABLED=false` is a hard safety stop: no story can be sent to the public channel, including a manually approved story.
 - Only administrative commands and callback actions are restricted by `TELEGRAM_ADMIN_USER_ID`; public users cannot approve/reject stories or change publication settings. Webhook requests are verified with `TELEGRAM_WEBHOOK_SECRET`.
 
@@ -105,7 +106,7 @@ Required Cloudflare setup after deploying this version:
 2. Add `TELEGRAM_ADMIN_USER_ID` as a Text variable containing the numeric Telegram user ID of the manager.
 3. Add `TELEGRAM_WEBHOOK_SECRET` as a Secret. Use a random 32+ character value containing only letters, digits, underscores or hyphens.
 4. Call `POST /admin/register-webhook` with `Authorization: Bearer <ADMIN_SECRET>`. This securely registers the Worker URL with Telegram; the bot token is not needed in the PowerShell request.
-5. Keep `PUBLISH_ENABLED=false` while testing the interface. After all tests pass, enable it to allow manual approvals to send; automatic publishing still requires choosing auto mode inside Telegram.
+5. Set `PUBLISH_ENABLED=true` only after the bot token, channel permissions, D1 binding, GitHub path and the deployed Cron Trigger have been verified. The scheduled publisher sends at most one queued story per six-hour run. `PUBLISH_ENABLED=false` remains the global emergency stop.
 
 The admin panel is private-chat only. Never put the bot token, admin secret, or webhook secret in GitHub.
 
