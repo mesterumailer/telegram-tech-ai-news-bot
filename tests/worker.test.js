@@ -10,6 +10,7 @@ import worker, {
   extractProxyDeepLinkFromPostHtml,
   resolveProxyLinksFromDigest
 } from '../src/index.js';
+import { parseNewsFeedXml, NEWS_FEEDS } from '../src/news-feed.js';
 
 const stories = [1, 2, 3].map(n => ({
   id: `story-${n}`,
@@ -851,4 +852,40 @@ test('scheduled Cron keeps the queue but sends nothing while PUBLISH_ENABLED is 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test('parses recent RSS items with their original HTTPS links and candidate image URLs', async () => {
+  const now = new Date('2026-11-05T12:00:00Z');
+  const feed = NEWS_FEEDS.find(item => item.id === 'openai-news');
+  const xml = `<?xml version="1.0"?><rss><channel><item>
+    <title><![CDATA[New AI system announced]]></title>
+    <link>https://example.com/story</link>
+    <pubDate>Thu, 05 Nov 2026 10:00:00 GMT</pubDate>
+    <description><![CDATA[<p>Important <b>AI</b> update.</p>]]></description>
+    <enclosure url="https://cdn.example.com/story.jpg" type="image/jpeg"/>
+  </item></channel></rss>`;
+  const items = parseNewsFeedXml(xml, feed, now);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, 'New AI system announced');
+  assert.equal(items[0].source_url, 'https://example.com/story');
+  assert.equal(items[0].summary, 'Important AI update.');
+  assert.equal(items[0].candidate_image_url, 'https://cdn.example.com/story.jpg');
+});
+
+test('parses Atom entries and ignores stale or non-HTTPS feed links', () => {
+  const now = new Date('2026-11-05T12:00:00Z');
+  const feed = NEWS_FEEDS.find(item => item.id === 'theverge-ai');
+  const xml = `<feed xmlns="http://www.w3.org/2005/Atom">
+    <entry><title>Fresh atom story</title><link rel="alternate" href="https://example.com/fresh"/>
+    <updated>2026-11-05T09:00:00Z</updated><summary>Atom summary</summary></entry>
+    <entry><title>Stale story</title><link href="https://example.com/old"/>
+    <updated>2026-09-01T09:00:00Z</updated></entry>
+    <entry><title>Insecure story</title><link href="http://example.com/insecure"/>
+    <updated>2026-11-05T09:00:00Z</updated></entry>
+  </feed>`;
+  const items = parseNewsFeedXml(xml, feed, now);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, 'Fresh atom story');
+  assert.equal(items[0].source_url, 'https://example.com/fresh');
 });
