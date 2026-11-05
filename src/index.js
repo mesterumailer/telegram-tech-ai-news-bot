@@ -112,22 +112,36 @@ export default {
   async scheduled(controller, env, ctx) {
     ctx.waitUntil((async () => {
       try {
-        await pruneTelegramWebhookUpdates(env);
-        const digest = await fetchGitHubDigest(env);
-        if (!digest) return;
-        const validation = validateDigest(digest);
-        if (!validation.ok) {
-          await logEvent(env, "validation_error", validation.error);
+        try { await pruneTelegramWebhookUpdates(env); }
+        catch (error) { await logEvent(env, "webhook_update_prune_failed", safeError(error)); }
+
+        // Refresh the persistent queue from the current GitHub digest. If GitHub is
+        // temporarily unavailable, the already queued stories can still be processed.
+        try {
+          const digest = await fetchGitHubDigest(env);
+          if (digest) {
+            const validation = validateDigest(digest);
+            if (!validation.ok) {
+              await logEvent(env, "validation_error", validation.error);
+            } else {
+              const queuedCount = await queueDigestForReview(digest, env, "scheduled");
+              await logEvent(env, "scheduled_digest_queued", JSON.stringify({
+                batch_id: digest.batch_id,
+                queued_or_updated: queuedCount
+              }));
+            }
+          }
+        } catch (error) {
+          await logEvent(env, "digest_fetch_failed", safeError(error));
+        }
+
+        // PUBLISH_ENABLED remains the single global emergency stop.
+        // Each six-hour Cron invocation publishes at most one queued story.
+        if (env.PUBLISH_ENABLED !== "true") {
+          await logEvent(env, "auto_publish_paused", "PUBLISH_ENABLED master switch is false");
           return;
         }
-        const mode = await getSetting(env, "publication_mode", "manual");
-        if (mode === "auto" && env.PUBLISH_ENABLED === "true") {
-          await processDigest(digest, env, "scheduled");
-        } else {
-          const queuedCount = await queueDigestForReview(digest, env, "scheduled");
-          if (queuedCount > 0 && env.TELEGRAM_ADMIN_USER_ID) await notifyPendingDigest(env, digest);
-          if (mode === "auto" && env.PUBLISH_ENABLED !== "true") await logEvent(env, "auto_publish_paused", "PUBLISH_ENABLED master switch is false");
-        }
+        await publishNextQueuedStory(env, "scheduled");
       } catch (error) {
         await logEvent(env, "worker_error", safeError(error));
       }
@@ -824,6 +838,82 @@ async function queueDigestForReview(digest, env, origin) {
     inserted += result.meta?.changes ?? 0;
   }
   return inserted;
+}
+
+async function publishNextQueuedStory(env, origin) {
+  const candidate = await env.DB.prepare(`SELECT q.story_id, q.story_json, q.batch_id
+    FROM story_review_queue q
+    LEFT JOIN published_stories p ON p.story_id = q.story_id
+    WHERE q.review_status = 'pending'
+      AND (p.story_id IS NULL OR p.status = 'dry_run')
+    ORDER BY q.updated_at ASC, q.story_id ASC
+    LIMIT 1`).bind().first();
+
+  if (!candidate) {
+    await logEvent(env, "scheduled_no_unpublished_story", "No eligible pending story was found");
+    return { sent: false, reason: "no_unpublished_stories" };
+  }
+
+  // Atomic queue claim prevents overlapping Cron invocations from sending the
+  // same item. A story left in 'publishing' after an ambiguous failure is not retried.
+  const queueClaim = await env.DB.prepare(`UPDATE story_review_queue
+    SET review_status = 'publishing', updated_at = CURRENT_TIMESTAMP
+    WHERE story_id = ? AND review_status = 'pending'`)
+    .bind(candidate.story_id).run();
+
+  if ((queueClaim.meta?.changes ?? 0) !== 1) {
+    await logEvent(env, "scheduled_story_claim_lost", candidate.story_id);
+    return { sent: false, reason: "story_claimed_by_another_execution" };
+  }
+
+  let story;
+  try {
+    story = JSON.parse(candidate.story_json);
+  } catch (error) {
+    await logEvent(env, "scheduled_story_invalid_json", `${candidate.story_id}: ${safeError(error)}`);
+    return { sent: false, reason: "invalid_queued_story", story_id: candidate.story_id };
+  }
+
+  const publishClaim = await env.DB.prepare(`INSERT INTO published_stories
+    (story_id, source_url, title, status, origin, last_error, updated_at)
+    VALUES (?, ?, ?, 'pending', ?, NULL, CURRENT_TIMESTAMP)
+    ON CONFLICT(story_id) DO UPDATE SET status='pending', origin=excluded.origin,
+    last_error=NULL, updated_at=CURRENT_TIMESTAMP
+    WHERE published_stories.status='dry_run'`)
+    .bind(story.id, story.source_url, story.title, origin).run();
+
+  if ((publishClaim.meta?.changes ?? 0) !== 1) {
+    const prior = await env.DB.prepare("SELECT status FROM published_stories WHERE story_id = ?").bind(story.id).first();
+    if (prior?.status === "sent") {
+      await env.DB.prepare("UPDATE story_review_queue SET review_status='published', updated_at=CURRENT_TIMESTAMP WHERE story_id=?")
+        .bind(story.id).run();
+    }
+    await logEvent(env, "scheduled_story_not_claimed", JSON.stringify({
+      story_id: story.id,
+      prior_status: prior?.status || "unknown"
+    }));
+    return { sent: false, reason: "manual_reconciliation_required", story_id: story.id };
+  }
+
+  try {
+    const proxyLinks = await resolveProxyLinksFromDigest({ stories: [story] }, env);
+    await sendTelegram(env, story, proxyLinks);
+  } catch (error) {
+    await upsertStory(env, story, "failed", origin, safeError(error));
+    await logEvent(env, "scheduled_story_failed", `${story.id}: ${safeError(error)}`);
+    // Keep the queue row in 'publishing'. Network failures can be ambiguous:
+    // do not automatically retry and risk posting the same story twice.
+    return { sent: false, reason: "send_failed_manual_review", story_id: story.id };
+  }
+
+  await upsertStory(env, story, "sent", origin);
+  await env.DB.prepare("UPDATE story_review_queue SET review_status='published', updated_at=CURRENT_TIMESTAMP WHERE story_id=?")
+    .bind(story.id).run();
+  await logEvent(env, "scheduled_story_published", JSON.stringify({
+    batch_id: candidate.batch_id,
+    story_id: story.id
+  }));
+  return { sent: true, story_id: story.id, batch_id: candidate.batch_id };
 }
 
 async function notifyPendingDigest(env, digest) {
