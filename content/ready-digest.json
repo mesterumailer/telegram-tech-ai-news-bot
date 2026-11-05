@@ -1,31 +1,40 @@
 {
-  "batch_id": "2026-11-03-daily-tech-ai-briefing",
-  "generated_at": "2026-11-03T03:15:12Z",
+  "batch_id": "2026-11-05-tech-ai-digest",
+  "generated_at": "2026-11-05T18:08:12Z",
   "language": "fa",
   "stories": [
     {
-      "id": "openai-grid-protectors-demand-response-georgia-20261102",
-      "title": "OpenAI برنامه‌ای برای کاهش فشار مراکز داده بر شبکه برق معرفی کرد",
-      "summary": "OpenAI در ۲ نوامبر برنامهٔ Grid Protectors را معرفی کرد تا مراکز پردازشی آینده هنگام فشار بر شبکه، مصرف برق خود را کاهش دهند و با شرکت‌های برق برای پاسخ‌گویی به اوج تقاضا هماهنگ شوند. در پروژهٔ برنامه‌ریزی‌شدهٔ Effingham County در جورجیا، توافق با Georgia Power امکان پاسخ‌گوییِ انعطاف‌پذیر تا ۱۰۰۰ مگاوات را پیش‌بینی می‌کند؛ این ظرفیت به معنای تولید برق جدید نیست، بلکه کاهش موقت برداشت از شبکه است. هدف اعلام‌شده، کمک به پایداری شبکه و جلوگیری از انتقال هزینه‌های زیرساختی به سایر مشترکان است.",
-      "source_url": "https://openai.com/index/grid-protectors-program/",
-      "category": "زیرساخت هوش مصنوعی و انرژی",
-      "published_at": "2026-11-02"
+      "id": "meta-acquires-conductor-ai-coding-20261104",
+      "title": "Meta استارتاپ ابزار برنامه‌نویسی هوش مصنوعی Conductor را خرید",
+      "summary": "Meta شرکت Conductor را خرید؛ استارتاپی که به توسعه‌دهندگان اجازه می‌دهد چند عامل هوش مصنوعی را در محیط‌های کاری موازی برای ساخت و بررسی نرم‌افزار به کار بگیرند. بنیان‌گذار Conductor پیوستن شرکت به Meta را اعلام کرد و Meta نیز این خرید را به TechCrunch تأیید کرد، اما جزئیات مالی منتشر نشده است. طبق اطلاعیهٔ خود Conductor، سرویس ابری آن از ۲۰ نوامبر ۲۰۲۶ تعطیل می‌شود و نسخهٔ محلی تا اوایل ۲۰۲۷ به‌روزرسانی و پشتیبانی خواهد شد.",
+      "source_url": "https://techcrunch.com/2026/11/04/meta-acquires-ai-coding-startup-conductor/",
+      "category": "کسب‌وکار و ابزارهای برنامه‌نویسی هوش مصنوعی",
+      "published_at": "2026-11-04T21:10:00Z",
+      "image_url": "https://www.conductor.build/changelog/joining-meta-0.93.0.png?dpl=dpl_2YGBsdB7ZzEBrnnUhDgfHe7Gct9z",
+      "image_credit": "Conductor — اطلاعیهٔ رسمی پیوستن به Meta",
+      "image_alt": "شخصیت نمادین Conductor با کلاه این شرکت در تصویر اطلاعیهٔ پیوستن به Meta"
     },
     {
-      "id": "palantir-q3-commercial-ai-growth-20261102",
-      "title": "درآمد تجاری آمریکا برای نخستین بار از درآمد دولتی Palantir پیشی گرفت",
-      "summary": "Palantir در ۲ نوامبر درآمد سه‌ماههٔ سوم ۲۰۲۶ را ۲.۳۱ میلیارد دلار اعلام کرد؛ رشد سالانهٔ ۹۶ درصدی که از برآورد تحلیل‌گران بالاتر بود. درآمد تجاری شرکت در آمریکا به ۹۸۴ میلیون دلار رسید و برای نخستین بار از درآمد دولتی آمریکا، ۹۵۳ میلیون دلار، عبور کرد. شرکت پیش‌بینی درآمد سالانهٔ ۲۰۲۶ را به بازهٔ ۸.۵۳۰ تا ۸.۵۳۴ میلیارد دلار افزایش داد. در کنار رشد تقاضای نرم‌افزارهای AI، Reuters به کندشدن رشد ارزش قراردادهای تجاری جدید نیز اشاره کرد.",
-      "source_url": "https://www.reuters.com/technology/palantir-tops-third-quarter-revenue-estimates-strong-ai-software-demand-2026-11-02/",
-      "category": "کسب‌وکار و کاربرد سازمانی هوش مصنوعی",
-      "published_at": "2026-11-02T21:06:00Z"
+      "id": "google-health-ai-evaluation-framework-20261104",
+      "title": "گوگل چارچوب تازه‌ای برای ارزیابی ایمنی و دقت هوش مصنوعی در سلامت منتشر کرد",
+      "summary": "Google چارچوب ارزیابی کاربردهای هوش مصنوعی در حوزهٔ سلامت را منتشر کرد. این روش عملکرد مدل‌ها را در سه محور دقت، ایمنی و سودمندی می‌سنجد و از آزمون‌های پرسش‌بسته، ارزیاب‌های خودکار و بررسی انسانی متخصصان استفاده می‌کند. هدف، سنجش عملکرد ابزارهای سلامت مبتنی بر AI در موقعیت‌های رایج و سناریوهای پرخطر است؛ چارچوب با همکاری متخصصان سلامت از Kaiser Permanente و دانشگاه پنسیلوانیا تدوین شده است.",
+      "source_url": "https://blog.google/innovation-and-ai/technology/health/evaluating-health-ai-at-scale/",
+      "category": "هوش مصنوعی در سلامت و پزشکی",
+      "published_at": "2026-11-04",
+      "image_url": "https://storage.googleapis.com/gweb-uniblog-publish-prod/images/Health_AI_Evals_inline.width-1200.format-webp.webp",
+      "image_credit": "Google Blog / Google for Health",
+      "image_alt": "یک عضو کادر درمان در حال بررسی تلفن همراه همراه با بیمار در محیط درمانی"
     },
     {
-      "id": "china-regulator-ai-capital-concentration-warning-20261103",
-      "title": "مقام ناظر مالی چین درباره تمرکز بیش‌ازحد سرمایه‌گذاری در هوش مصنوعی هشدار داد",
-      "summary": "شیائو یوان‌چی، معاون ادارهٔ ملی تنظیم مقررات مالی چین، در نشست رهبران مالی جهانی هنگ‌کنگ در ۳ نوامبر گفت سرمایه‌گذاری جهانی در AI بیش‌ازحد بر فناوری و شرکت‌های پیشرو متمرکز شده است. به گفتهٔ او، ورود سرمایهٔ سنگین می‌تواند اهرم مالی و توسعهٔ شتاب‌زده را افزایش دهد و با بالا بردن هزینهٔ وام، سرمایه‌گذاری صنایع سنتی را محدود کند. او خواستار چارچوب‌های سیاستی برای مدیریت پیامدهای اقتصادی و ریسک‌های مالی ناشی از گسترش AI شد.",
-      "source_url": "https://www.reuters.com/business/finance/ai-investment-is-becoming-overly-concentrated-chinese-official-says-2026-11-03/",
-      "category": "اقتصاد هوش مصنوعی و سیاست‌گذاری",
-      "published_at": "2026-11-03T02:28:00Z"
+      "id": "openai-acquires-pierre-computer-codex-20261104",
+      "title": "OpenAI قصد خرید شرکت Pierre و ادغام ابزارهای توسعه‌دهندهٔ آن در Codex را دارد",
+      "summary": "OpenAI اعلام کرد که Pierre Computer Company را خریداری خواهد کرد؛ شرکتی که سرویس Code Storage و چند ابزار متن‌باز توسعهٔ نرم‌افزار را ساخته است. کتابخانه‌های Trees و Diffs این شرکت هم‌اکنون در Codex برای مرور فایل‌ها و بررسی تغییرات کد استفاده می‌شوند. OpenAI می‌گوید هدف، گسترش ابزارهای ساخت، فهم و بازبینی کد در جریان‌های کاری مبتنی بر عامل‌های هوش مصنوعی است. تکمیل معامله به شروط معمول و دریافت مجوزهای لازم وابسته است و دو شرکت تا آن زمان مستقل می‌مانند.",
+      "source_url": "https://openai.com/index/openai-to-acquire-pierre/",
+      "category": "هوش مصنوعی و ابزارهای توسعهٔ نرم‌افزار",
+      "published_at": "2026-11-04",
+      "image_url": "https://pbs.twimg.com/media/HERQ1MlaIAAYhor.jpg",
+      "image_credit": "Jacob (@fat) / Pierre Computer Company در X",
+      "image_alt": "نشان تجاری Pierre Computer Company روی پس‌زمینهٔ فیروزه‌ای؛ شرکتی که OpenAI قصد خرید آن را دارد"
     }
   ]
 }
