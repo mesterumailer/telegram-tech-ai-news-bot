@@ -221,14 +221,19 @@ export function validateDigest(digest) {
       const parsed = new URL(s.source_url);
       if (parsed.protocol !== "https:") return { ok: false, error: `stories[${i}].source_url must use HTTPS` };
     } catch { return { ok: false, error: `stories[${i}].source_url is invalid` }; }
-    if (s.image_url !== undefined && s.image_url !== null && s.image_url !== "") {
-      if (typeof s.image_url !== "string" || s.image_url.length > 2048) return { ok: false, error: `stories[${i}].image_url is invalid` };
+    const imageFields = ["image_url", "image_credit", "image_alt"];
+    const imageFieldPresent = imageFields.map(key => typeof s[key] === "string" && s[key].trim().length > 0);
+    if (imageFieldPresent.some(Boolean) && !imageFieldPresent.every(Boolean)) {
+      return { ok: false, error: `stories[${i}] must include image_url, image_credit, and image_alt together, or omit all three` };
+    }
+    if (imageFieldPresent.every(Boolean)) {
+      if (s.image_url.length > 2048) return { ok: false, error: `stories[${i}].image_url is invalid` };
       try {
         const imageUrl = new URL(s.image_url);
         if (imageUrl.protocol !== "https:" || !imageUrl.hostname || imageUrl.username || imageUrl.password) return { ok: false, error: `stories[${i}].image_url must be a public HTTPS URL` };
       } catch { return { ok: false, error: `stories[${i}].image_url is invalid` }; }
+      if (s.image_credit.length > 160) return { ok: false, error: `stories[${i}].image_credit is invalid` };
     }
-    if (s.image_credit !== undefined && (typeof s.image_credit !== "string" || s.image_credit.length > 160)) return { ok: false, error: `stories[${i}].image_credit is invalid` };
     for (const key of ["proxy1_url", "proxy2_url"]) {
       if (s[key] !== undefined && s[key] !== null && s[key] !== "") {
         if (typeof s[key] !== "string" || s[key].length > 2048) return { ok: false, error: `stories[${i}].${key} is invalid` };
