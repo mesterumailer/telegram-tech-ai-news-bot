@@ -124,6 +124,88 @@ function createLatestViewDb() {
   };
 }
 
+function createSchedulerDb() {
+  const queue = new Map();
+  const published = new Map();
+  const events = [];
+  const statements = [];
+
+  function statement(sql) {
+    let values = [];
+    const api = {
+      bind(...args) { values = args; return api; },
+      async first() {
+        statements.push({ sql, values, method: 'first' });
+        if (sql.includes('FROM story_review_queue q')) {
+          const row = [...queue.values()]
+            .filter(item => item.review_status === 'pending')
+            .filter(item => {
+              const prior = published.get(item.story_id);
+              return !prior || prior.status === 'dry_run';
+            })
+            .sort((a, b) => a.story_id.localeCompare(b.story_id))[0];
+          return row ? { ...row } : null;
+        }
+        if (sql.includes('SELECT status FROM published_stories')) {
+          return published.get(values[0]) || null;
+        }
+        return null;
+      },
+      async all() {
+        statements.push({ sql, values, method: 'all' });
+        return { results: [] };
+      },
+      async run() {
+        statements.push({ sql, values, method: 'run' });
+        if (sql.includes('INSERT INTO story_review_queue')) {
+          const [storyId, batchId, storyJson, origin] = values;
+          const prior = queue.get(storyId);
+          if (!prior) {
+            queue.set(storyId, { story_id: storyId, batch_id: batchId, story_json: storyJson, review_status: 'pending', origin });
+            return { meta: { changes: 1 } };
+          }
+          if (prior.review_status === 'pending' && prior.story_json !== storyJson) {
+            queue.set(storyId, { ...prior, batch_id: batchId, story_json: storyJson, origin });
+            return { meta: { changes: 1 } };
+          }
+          return { meta: { changes: 0 } };
+        }
+        if (sql.includes('UPDATE story_review_queue')) {
+          const storyId = values[0];
+          const row = queue.get(storyId);
+          if (!row) return { meta: { changes: 0 } };
+          if (/SET review_status\s*=\s*'publishing'/.test(sql) && row.review_status !== 'pending') return { meta: { changes: 0 } };
+          const status = /SET review_status\s*=\s*'([^']+)'/.exec(sql)?.[1];
+          if (status) queue.set(storyId, { ...row, review_status: status });
+          return { meta: { changes: 1 } };
+        }
+        if (sql.includes('INSERT INTO published_stories')) {
+          const [storyId, sourceUrl, title] = values;
+          const prior = published.get(storyId);
+          if (sql.includes("VALUES (?, ?, ?, 'pending'")) {
+            if (prior && prior.status !== 'dry_run') return { meta: { changes: 0 } };
+            published.set(storyId, { status: 'pending', source_url: sourceUrl, title });
+          } else {
+            const status = values[3];
+            published.set(storyId, { status, source_url: sourceUrl, title });
+          }
+          return { meta: { changes: 1 } };
+        }
+        if (sql.includes('INSERT INTO event_logs')) {
+          events.push({ event: values[0], detail: values[1] });
+        }
+        return { meta: { changes: 1 } };
+      }
+    };
+    return api;
+  }
+
+  return {
+    queue, published, events, statements,
+    prepare: statement
+  };
+}
+
 test('accepts exactly three valid stories with HTTPS sources', () => assert.deepEqual(validateDigest(valid), { ok: true }));
 test('rejects a digest without a batch id', () => assert.equal(validateDigest({ ...valid, batch_id: '' }).ok, false));
 test('rejects fewer than three stories', () => assert.equal(validateDigest({ ...valid, stories: stories.slice(0, 2) }).ok, false));
@@ -672,6 +754,100 @@ test('webhook status endpoint reports whether callback_query updates are enabled
     assert.equal(body.webhook_configured, true);
     assert.equal(body.callback_query_enabled, true);
     assert.equal(body.pending_update_count, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test('scheduled Cron queues a digest and publishes only one pending story per run', async () => {
+  const DB = createSchedulerDb();
+  const digest = {
+    batch_id: 'cron-one-story-test',
+    stories: stories.map(story => ({ ...story }))
+  };
+  const originalFetch = globalThis.fetch;
+  const telegramCalls = [];
+  globalThis.fetch = async url => {
+    const target = String(url);
+    if (target.startsWith('https://api.github.com/')) {
+      return new Response(JSON.stringify({
+        type: 'file',
+        content: Buffer.from(JSON.stringify(digest), 'utf8').toString('base64')
+      }), { status: 200 });
+    }
+    if (target.startsWith('https://example.com/')) {
+      return new Response('no image metadata', { status: 404 });
+    }
+    if (target.startsWith('https://api.telegram.org/')) {
+      telegramCalls.push(target.split('/').pop());
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }
+    return new Response('', { status: 404 });
+  };
+
+  const env = {
+    DB,
+    GITHUB_OWNER: 'owner',
+    GITHUB_REPO: 'repo',
+    GITHUB_BRANCH: 'main',
+    GITHUB_PATH: 'content/ready-digest.json',
+    TELEGRAM_BOT_TOKEN: 'test-token',
+    TELEGRAM_CHANNEL_ID: '@test-channel',
+    PUBLISH_ENABLED: 'true'
+  };
+
+  const runCron = async () => {
+    const pending = [];
+    worker.scheduled({}, env, { waitUntil(promise) { pending.push(promise); } });
+    await Promise.all(pending);
+  };
+
+  try {
+    await runCron();
+    assert.equal(telegramCalls.filter(method => method === 'sendMessage').length, 1);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'published').length, 1);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 2);
+
+    await runCron();
+    assert.equal(telegramCalls.filter(method => method === 'sendMessage').length, 2);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'published').length, 2);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('scheduled Cron keeps the queue but sends nothing while PUBLISH_ENABLED is false', async () => {
+  const DB = createSchedulerDb();
+  const digest = { batch_id: 'cron-publish-off-test', stories: stories.map(story => ({ ...story })) };
+  const originalFetch = globalThis.fetch;
+  let telegramCalls = 0;
+  globalThis.fetch = async url => {
+    const target = String(url);
+    if (target.startsWith('https://api.github.com/')) {
+      return new Response(JSON.stringify({
+        type: 'file',
+        content: Buffer.from(JSON.stringify(digest), 'utf8').toString('base64')
+      }), { status: 200 });
+    }
+    if (target.startsWith('https://api.telegram.org/')) telegramCalls++;
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const pending = [];
+    worker.scheduled({}, {
+      DB,
+      GITHUB_OWNER: 'owner',
+      GITHUB_REPO: 'repo',
+      GITHUB_BRANCH: 'main',
+      GITHUB_PATH: 'content/ready-digest.json',
+      PUBLISH_ENABLED: 'false'
+    }, { waitUntil(promise) { pending.push(promise); } });
+    await Promise.all(pending);
+    assert.equal(DB.queue.size, 3);
+    assert.equal(telegramCalls, 0);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 3);
   } finally {
     globalThis.fetch = originalFetch;
   }
