@@ -35,6 +35,14 @@
 8. اجرای مهاجرت D1: `npx wrangler d1 migrations apply telegram-news-state --remote`
 9. برای انتشار خودکار، `PUBLISH_ENABLED=true` را در تنظیمات محیط Production Worker قرار دهید و Worker را deploy کنید؛ سپس `/health` باید `mode: publish` نشان دهد. چون `keep_vars=true` است، مقدار متغیری که از قبل در Dashboard ذخیره شده در زمان deploy حفظ می‌شود؛ اگر مقدار زنده `false` باشد، باید همان‌جا به `true` تغییر کند.
 
+## RSS feed collector
+
+- Worker در هر اجرای Cron شش‌ساعته شش منبع RSS را بررسی می‌کند: OpenAI News، TechCrunch AI، The Verge AI، MIT Technology Review AI، Ars Technica AI و VentureBeat AI.
+- آیتم‌های تازه و دارای تاریخ معتبر در جدول D1 به نام `news_feed_items` ذخیره می‌شوند. این فیدها فقط منبع کشف خبر هستند؛ به‌تنهایی باعث انتشار نمی‌شوند.
+- GPT می‌تواند فهرست ورودی‌ها را از endpoint عمومی و فقط‌خواندنی `GET /feed/candidates?limit=60` دریافت کند. قبل از انتخاب، خبر باید در منبع اصلی و با یک منبع معتبر دیگر بررسی شود.
+- تصویر داخل RSS فقط یک سرنخ است؛ GPT باید URL مستقیم، عمومی، HTTPS و اعتبار دقیق آن را جداگانه بررسی کند.
+- برای این قابلیت، مهاجرت `0004_news_feed_items.sql` باید روی D1 راه دور اعمال و Worker جدید deploy شود.
+
 ## قالب خروجی ChatGPT
 
 فایل `content/ready-digest.json` باید شبیه `examples/ready-digest.json` باشد. برای هر خبر `id` پایدار و یکتا، عنوان فارسی، خلاصه، لینک HTTPS منبع و در صورت امکان دسته و زمان انتشار لازم است. هر batch یک `batch_id` دارد. فیلدهای تصویری اختیاری‌اند: `image_url` در صورت وجود باید لینک مستقیم، عمومی و HTTPS به فایل تصویر باشد (نه لینک صفحه مقاله)، `image_credit` اعتبار دقیق عکاس/شرکت/ناشر و `image_alt` شرح کوتاه تصویر است. اگر `image_url` خالی باشد، Worker تلاش می‌کند تصویر صفحهٔ مقاله را از متادیتای `og:image` یا `twitter:image` استخراج کند؛ اگر سایت تصویر قابل‌دسترسی ارائه نکند، خبر متنی ارسال و رویداد `image_not_found` ثبت می‌شود.
