@@ -31,7 +31,7 @@ function escapeRegExp(value) {
 function readElement(block, name) {
   const safe = escapeRegExp(name);
   const match = new RegExp("<" + safe + "\\b[^>]*>([\\s\\S]*?)<\\/" + safe + "\\s*>", "i").exec(block);
-  return match ? decodeXml(match[1].replace(/<\\/?\\w[^>]*>/g, " ")) : "";
+  return match ? decodeXml(match[1].replace(/<\/?\w[^>]*>/g, " ")) : "";
 }
 
 function readAttribute(tag, name) {
@@ -42,12 +42,12 @@ function readAttribute(tag, name) {
 
 function stripMarkup(value) {
   return decodeXml(String(value || "")
-    .replace(/<!\\[CDATA\\[/gi, "")
-    .replace(/\\]\\]>/g, "")
-    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, " ")
-    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, " ")
+    .replace(/<!\[CDATA\[/gi, "")
+    .replace(/\]\]>/g, "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " "))
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -63,7 +63,7 @@ function firstHttpsUrl(value) {
 }
 
 function readEntryLink(block) {
-  const tags = block.match(/<link\\b[^>]*>/gi) || [];
+  const tags = block.match(/<link\b[^>]*>/gi) || [];
   for (const tag of tags) {
     const href = readAttribute(tag, "href");
     const rel = readAttribute(tag, "rel");
@@ -76,19 +76,19 @@ function readEntryLink(block) {
 }
 
 function readEntryImage(block) {
-  const tags = block.match(/<(?:media:content|media:thumbnail|enclosure)\\b[^>]*\\/?\s*>/gi) || [];
+  const tags = block.match(/<(?:media:content|media:thumbnail|enclosure)\b[^>]*\/?\s*>/gi) || [];
   for (const tag of tags) {
     const type = readAttribute(tag, "type");
     const url = firstHttpsUrl(readAttribute(tag, "url"));
     if (url && (!type || type.toLowerCase().startsWith("image/"))) return url;
   }
-  const imageTag = (block.match(/<img\\b[^>]*>/i) || [])[0] || "";
+  const imageTag = (block.match(/<img\b[^>]*>/i) || [])[0] || "";
   return firstHttpsUrl(readAttribute(imageTag, "src"));
 }
 
 export function parseNewsFeedXml(xml, feed, now = new Date()) {
   const source = String(xml || "");
-  const blocks = [...source.matchAll(/<(item|entry)\\b[^>]*>([\\s\\S]*?)<\\/\\1\\s*>/gi)]
+  const blocks = [...source.matchAll(/<(item|entry)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi)]
     .slice(0, MAX_ITEMS_PER_FEED);
   const cutoff = now.getTime() - MAX_CANDIDATE_AGE_DAYS * 24 * 60 * 60 * 1000;
   const futureLimit = now.getTime() + 24 * 60 * 60 * 1000;
