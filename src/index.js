@@ -847,7 +847,7 @@ async function publishNextQueuedStory(env, origin) {
     WHERE q.review_status = 'pending'
       AND (p.story_id IS NULL OR p.status = 'dry_run')
     ORDER BY q.updated_at ASC, q.story_id ASC
-    LIMIT 1`).bind().first();
+    LIMIT 1`).first();
 
   if (!candidate) {
     await logEvent(env, "scheduled_no_unpublished_story", "No eligible pending story was found");
