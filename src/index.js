@@ -746,7 +746,7 @@ async function sendAdminMenu(env, chatId) {
 
 async function showPublicationSettings(env, chatId, changed = false) {
   const mode = await getSetting(env, "publication_mode", "manual");
-  const text = `⚙️ <b>تنظیم شیوه انتشار</b>\\n\\nحالت فعلی: <b>${mode === "auto" ? "انتشار خودکار" : "انتشار با تأیید مدیر"}</b>\\n\\n${env.PUBLISH_ENABLED === "true" ? "کلید اصلی انتشار روشن است." : "کلید اصلی انتشار خاموش است؛ در این وضعیت هیچ خبری به کانال ارسال نمی‌شود، حتی اگر حالت خودکار انتخاب شود."}${changed ? "\\n\\nتنظیم ذخیره شد." : ""}`;
+  const text = `⚙️ <b>تنظیم شیوه انتشار</b>\\n\\nمسیر زمان‌بندی‌شدهٔ Cloudflare: <b>خودکار؛ حداکثر یک خبر در هر اجرای ۶ ساعته</b>.\\n\\nحالت انتخابی زیر فقط برای ارسال از مسیر دستی/API است: <b>${mode === "auto" ? "انتشار خودکار" : "انتشار با تأیید مدیر"}</b>.\\n\\n${env.PUBLISH_ENABLED === "true" ? "کلید اصلی انتشار روشن است." : "کلید اصلی انتشار خاموش است؛ تا زمان روشن‌شدن آن هیچ خبری به کانال ارسال نمی‌شود."}${changed ? "\\n\\nتنظیم ذخیره شد." : ""}`;
   return sendBotMessage(env, chatId, text, { inline_keyboard: [
     [{ text: mode === "manual" ? "✓ با تأیید مدیر" : "با تأیید مدیر", callback_data: "mode:manual" }],
     [{ text: mode === "auto" ? "✓ انتشار خودکار" : "انتشار خودکار", callback_data: "mode:auto" }],
