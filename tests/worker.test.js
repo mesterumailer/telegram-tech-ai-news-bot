@@ -219,7 +219,7 @@ test('rejects a story missing its source URL', () => assert.equal(validateDigest
 test('rejects oversized story text', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], summary: 'x'.repeat(2501) }, stories[1], stories[2]] }).ok, false));
 
 test('accepts an optional direct HTTPS image URL', () => {
-  const withImage = { ...valid, stories: [{ ...stories[0], image_url: 'https://cdn.example.com/news.jpg' }, stories[1], stories[2]] };
+  const withImage = { ...valid, stories: [{ ...stories[0], image_url: 'https://cdn.example.com/news.jpg', image_credit: 'Example Company', image_alt: 'تصویر نمونه محصول' }, stories[1], stories[2]] };
   assert.deepEqual(validateDigest(withImage), { ok: true });
 });
 
@@ -661,7 +661,9 @@ test('rapid latest-news button clicks are throttled for the same private chat', 
     batch_id: 'latest-click-test',
     stories: stories.map((story, index) => ({
       ...story,
-      image_url: `https://cdn.example.com/story-${index + 1}.jpg`
+      image_url: `https://cdn.example.com/story-${index + 1}.jpg`,
+      image_credit: 'Example Company',
+      image_alt: `تصویر خبر ${index + 1}`
     }))
   };
   const DB = createLatestViewDb();
