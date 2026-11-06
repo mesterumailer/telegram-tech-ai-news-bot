@@ -1,40 +1,31 @@
 {
-  "batch_id": "2026-11-05-tech-ai-digest",
-  "generated_at": "2026-11-05T18:08:12Z",
+  "batch_id": "2026-11-06-daily-tech-ai-digest",
+  "generated_at": "2026-11-06T03:08:55Z",
   "language": "fa",
   "stories": [
     {
-      "id": "meta-acquires-conductor-ai-coding-20261104",
-      "title": "Meta استارتاپ ابزار برنامه‌نویسی هوش مصنوعی Conductor را خرید",
-      "summary": "Meta شرکت Conductor را خرید؛ استارتاپی که به توسعه‌دهندگان اجازه می‌دهد چند عامل هوش مصنوعی را در محیط‌های کاری موازی برای ساخت و بررسی نرم‌افزار به کار بگیرند. بنیان‌گذار Conductor پیوستن شرکت به Meta را اعلام کرد و Meta نیز این خرید را به TechCrunch تأیید کرد، اما جزئیات مالی منتشر نشده است. طبق اطلاعیهٔ خود Conductor، سرویس ابری آن از ۲۰ نوامبر ۲۰۲۶ تعطیل می‌شود و نسخهٔ محلی تا اوایل ۲۰۲۷ به‌روزرسانی و پشتیبانی خواهد شد.",
-      "source_url": "https://techcrunch.com/2026/11/04/meta-acquires-ai-coding-startup-conductor/",
-      "category": "کسب‌وکار و ابزارهای برنامه‌نویسی هوش مصنوعی",
-      "published_at": "2026-11-04T21:10:00Z",
-      "image_url": "https://www.conductor.build/changelog/joining-meta-0.93.0.png?dpl=dpl_2YGBsdB7ZzEBrnnUhDgfHe7Gct9z",
-      "image_credit": "Conductor — اطلاعیهٔ رسمی پیوستن به Meta",
-      "image_alt": "شخصیت نمادین Conductor با کلاه این شرکت در تصویر اطلاعیهٔ پیوستن به Meta"
+      "id": "openai-gpt-6-cyber-launch-20261105",
+      "title": "OpenAI مدل امنیت سایبری GPT-6 Cyber را با سطح ریسک «بحرانی» معرفی کرد",
+      "summary": "OpenAI در ۵ نوامبر مدل GPT-6 Cyber را برای گروه محدودی از مشتریان تأییدشدهٔ برنامهٔ Daybreak Red عرضه کرد. این مدل برای کشف و اعتبارسنجی آسیب‌پذیری‌ها و کمک به ساخت اصلاحیه طراحی شده و در آزمون ExploitGym امتیاز ۴۸.۵ درصد گرفته است؛ در مقایسه، امتیاز GPT-5.6 Cyber برابر ۳۲.۱ درصد بود. OpenAI می‌گوید این مدل به شناسایی ۸۱ آسیب‌پذیری ناشناخته و با شدت بالا در Firefox کمک کرده و در ارزیابی رعایت محدودهٔ مجاز، بدون دستورهای ایمنی زمان استقرار در ۹۹.۹۳ درصد آزمون‌ها از هدف خارج نشده است. دسترسی فعلاً محدود به فعالیت‌های دفاعی و امنیتی مجاز است و عرضهٔ عمومی اعلام نشده است.",
+      "source_url": "https://openai.com/index/introducing-gpt-6-cyber/",
+      "category": "هوش مصنوعی و امنیت سایبری",
+      "published_at": "2026-11-05"
     },
     {
-      "id": "google-health-ai-evaluation-framework-20261104",
-      "title": "گوگل چارچوب تازه‌ای برای ارزیابی ایمنی و دقت هوش مصنوعی در سلامت منتشر کرد",
-      "summary": "Google چارچوب ارزیابی کاربردهای هوش مصنوعی در حوزهٔ سلامت را منتشر کرد. این روش عملکرد مدل‌ها را در سه محور دقت، ایمنی و سودمندی می‌سنجد و از آزمون‌های پرسش‌بسته، ارزیاب‌های خودکار و بررسی انسانی متخصصان استفاده می‌کند. هدف، سنجش عملکرد ابزارهای سلامت مبتنی بر AI در موقعیت‌های رایج و سناریوهای پرخطر است؛ چارچوب با همکاری متخصصان سلامت از Kaiser Permanente و دانشگاه پنسیلوانیا تدوین شده است.",
-      "source_url": "https://blog.google/innovation-and-ai/technology/health/evaluating-health-ai-at-scale/",
-      "category": "هوش مصنوعی در سلامت و پزشکی",
-      "published_at": "2026-11-04",
-      "image_url": "https://storage.googleapis.com/gweb-uniblog-publish-prod/images/Health_AI_Evals_inline.width-1200.format-webp.webp",
-      "image_credit": "Google Blog / Google for Health",
-      "image_alt": "یک عضو کادر درمان در حال بررسی تلفن همراه همراه با بیمار در محیط درمانی"
+      "id": "openai-national-community-compact-ai-datacenters-20261105",
+      "title": "OpenAI تعهدهای تازه‌ای درباره مصرف انرژی و آب و شفافیت مراکز داده منتشر کرد",
+      "summary": "OpenAI در ۵ نوامبر «پیمان ملی جامعه» و یک پیشنهاد سیاستی برای مراکز پردازشی خود منتشر کرد. شرکت می‌گوید در مراکزی که مالک آن‌هاست و خود اداره می‌کند، هزینهٔ کامل برق و زیرساخت موردنیاز را می‌پردازد، برنامهٔ آب و مصرف انرژی و آب هر محل را منتشر می‌کند و پیش از آغاز بهره‌برداری، برنامهٔ ساخت و مطالعات مستقل آلودگی صوتی را در دسترس می‌گذارد. همچنین وعده داده است با مقام‌های عمومی درباره این پروژه‌ها توافق‌نامهٔ عدم افشا امضا نکند، جز در موارد محدود امنیتی یا اطلاعات تجاری محرمانه. این‌ها تعهدهای اعلام‌شدهٔ OpenAI برای پروژه‌های خودش هستند؛ پیشنهاد سیاستی شرکت از قانون الزام‌آور سراسری متمایز است.",
+      "source_url": "https://openai.com/index/setting-new-standard-responsible-ai-infrastructure/",
+      "category": "زیرساخت هوش مصنوعی، انرژی و سیاست‌گذاری",
+      "published_at": "2026-11-05"
     },
     {
-      "id": "openai-acquires-pierre-computer-codex-20261104",
-      "title": "OpenAI قصد خرید شرکت Pierre و ادغام ابزارهای توسعه‌دهندهٔ آن در Codex را دارد",
-      "summary": "OpenAI اعلام کرد که Pierre Computer Company را خریداری خواهد کرد؛ شرکتی که سرویس Code Storage و چند ابزار متن‌باز توسعهٔ نرم‌افزار را ساخته است. کتابخانه‌های Trees و Diffs این شرکت هم‌اکنون در Codex برای مرور فایل‌ها و بررسی تغییرات کد استفاده می‌شوند. OpenAI می‌گوید هدف، گسترش ابزارهای ساخت، فهم و بازبینی کد در جریان‌های کاری مبتنی بر عامل‌های هوش مصنوعی است. تکمیل معامله به شروط معمول و دریافت مجوزهای لازم وابسته است و دو شرکت تا آن زمان مستقل می‌مانند.",
-      "source_url": "https://openai.com/index/openai-to-acquire-pierre/",
-      "category": "هوش مصنوعی و ابزارهای توسعهٔ نرم‌افزار",
-      "published_at": "2026-11-04",
-      "image_url": "https://pbs.twimg.com/media/HERQ1MlaIAAYhor.jpg",
-      "image_credit": "Jacob (@fat) / Pierre Computer Company در X",
-      "image_alt": "نشان تجاری Pierre Computer Company روی پس‌زمینهٔ فیروزه‌ای؛ شرکتی که OpenAI قصد خرید آن را دارد"
+      "id": "china-blocks-softbank-abb-robotics-china-20261105",
+      "title": "چین با انتقال عملیات رباتیک ABB به SoftBank مخالفت کرد",
+      "summary": "ABB اعلام کرد مقام‌های چینی با خرید کسب‌وکار رباتیک این شرکت در چین توسط SoftBank موافقت نکرده‌اند؛ موضوعی که معاملهٔ برنامه‌ریزی‌شدهٔ حدود ۵.۴ میلیارد دلاری SoftBank برای خرید بخش رباتیک ABB را با مانع جدی روبه‌رو کرده است. چین حدود ۳۰ درصد از کسب‌وکار رباتیک ABB را تشکیل می‌دهد. Reuters گزارش داد منابع آگاه نگران انتقال داده‌های حساس به خارج از چین بوده‌اند، اما این علت در بیانیهٔ عمومی ABB به‌عنوان دلیل رسمی ذکر نشده است. ABB گفته دو شرکت همچنان در حال گفت‌وگو و تلاش برای پیشبرد معامله‌اند؛ بنابراین نباید این خبر را به‌معنای لغو قطعی کل معامله دانست.",
+      "source_url": "https://www.reuters.com/business/media-telecom/china-blocks-softbanks-54-billion-takeover-abbs-robotics-division-ft-reports-2026-11-05/",
+      "category": "رباتیک، هوش مصنوعی فیزیکی و سرمایه‌گذاری فناوری",
+      "published_at": "2026-11-05T03:15:00Z"
     }
   ]
 }
