@@ -555,6 +555,7 @@ export async function discoverLatestProxyPostUrls() {
   const postUrls = [];
   const seen = new Set();
   let before = null;
+  let sawPostMarkers = false;
 
   // Telegram's public preview is newest-first. Scan up to three pages to skip
   // posts with Unknown/invalid servers and find two real Connect links.
@@ -572,7 +573,11 @@ export async function discoverLatestProxyPostUrls() {
     if (!response.ok) throw new Error(`Telegram proxy feed failed with HTTP ${response.status}`);
     const html = (await response.text()).slice(0, 2_000_000);
     const markers = [...html.matchAll(/data-post\s*=\s*["']([^"']+)["']/gi)];
-    if (!markers.length) break;
+    if (!markers.length) {
+      if (!sawPostMarkers) throw new Error("Telegram proxy feed did not contain public post markers");
+      break;
+    }
+    sawPostMarkers = true;
 
     let oldestId = Number.POSITIVE_INFINITY;
     for (const marker of markers) {
@@ -599,13 +604,13 @@ export async function discoverLatestProxyPostUrls() {
 export async function refreshProxyPostCache(env) {
   if (!env.DB) throw new Error("D1 database binding is unavailable");
   const postUrls = await discoverLatestProxyPostUrls();
-  // A successful feed read with no valid Connect posts clears stale entries.
-  await env.DB.prepare("DELETE FROM proxy_post_cache").run();
+  // Replace both slots atomically. Only post URLs are persisted, never Connect URLs.
+  const statements = [env.DB.prepare("DELETE FROM proxy_post_cache")];
   for (let index = 0; index < postUrls.length; index++) {
-    await env.DB.prepare(`INSERT INTO proxy_post_cache (slot, post_url, updated_at)
-      VALUES (?, ?, CURRENT_TIMESTAMP)`)
-      .bind(index + 1, postUrls[index]).run();
+    statements.push(env.DB.prepare(`INSERT INTO proxy_post_cache (slot, post_url, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)`).bind(index + 1, postUrls[index]));
   }
+  await env.DB.batch(statements);
   await logEvent(env, "proxy_post_cache_updated", JSON.stringify({ count: postUrls.length }));
   return postUrls;
 }
