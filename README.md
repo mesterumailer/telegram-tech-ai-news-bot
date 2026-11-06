@@ -18,6 +18,7 @@
 - `src/news-feed.js` — دریافت، پارس و ذخیرهٔ فیدهای RSS فناوری و AI
 - `migrations/0001_init.sql` — جداول D1 برای وضعیت خبرها و گزارش رویدادها
 - `migrations/0004_news_feed_items.sql` — جدول پایدار آیتم‌های RSS
+- `migrations/0005_proxy_post_cache.sql` — کش پایدار دو URL پست پروکسی؛ فقط URL پست ذخیره می‌شود و Secret خام در D1 یا JSON نگهداری نمی‌شود
 - `examples/ready-digest.json` — نمونه ساختار داده؛ خبر نمونه است و نباید منتشر شود
 - `wrangler.toml` — تنظیمات Worker و Cron هر ۶ ساعت
 - `tests/worker.test.js` — تست‌های اولیه اعتبارسنجی
@@ -36,6 +37,15 @@
 7. در `wrangler.toml` مقادیر `GITHUB_OWNER`، `GITHUB_REPO`، `GITHUB_BRANCH` و `GITHUB_PATH` را تنظیم کنید.
 8. اجرای مهاجرت D1: `npx wrangler d1 migrations apply telegram-news-state --remote`
 9. برای انتشار خودکار، `PUBLISH_ENABLED=true` را در تنظیمات محیط Production Worker قرار دهید و Worker را deploy کنید؛ سپس `/health` باید `mode: publish` نشان دهد. چون `keep_vars=true` است، مقدار متغیری که از قبل در Dashboard ذخیره شده در زمان deploy حفظ می‌شود؛ اگر مقدار زنده `false` باشد، باید همان‌جا به `true` تغییر کند.
+
+## Independent MTProto proxy refresh
+
+- در هر اجرای Cron شش‌ساعته، Worker مستقل از وجود یا نبود digest، صفحه عمومی `https://t.me/s/ProxyMTProto` را بررسی می‌کند.
+- از جدیدترین پست‌ها فقط مواردی انتخاب می‌شوند که دکمه Connect با لینک معتبر MTProto داشته باشند؛ پست‌های دارای Server نامشخص یا لینک نامعتبر رد می‌شوند.
+- فقط URL پست‌ها در جدول D1 به نام `proxy_post_cache` ذخیره می‌شوند. لینک اتصال حاوی Secret فقط هنگام نمایش/ارسال دکمه در حافظه ساخته می‌شود و در GitHub JSON یا D1 ذخیره نمی‌شود.
+- هنگام پیش‌نمایش `/latest`، تأیید دستی یا انتشار زمان‌بندی‌شده، Worker لینک اتصال مستقیم را از پست‌های ذخیره‌شده استخراج و به‌صورت دکمه‌های «اتصال پروکسی ۱/۲» اضافه می‌کند.
+- خطای موقت Telegram باعث توقف انتشار خبر نمی‌شود؛ Worker از آخرین URLهای ذخیره‌شده استفاده می‌کند. اگر هیچ cache قابل‌استفاده‌ای وجود نداشته باشد، خبر بدون دکمه پروکسی ارسال می‌شود.
+- برای فعال‌سازی این قابلیت، مهاجرت `0005_proxy_post_cache.sql` باید روی D1 راه دور اعمال و Worker جدید deploy شود.
 
 ## RSS feed collector
 
