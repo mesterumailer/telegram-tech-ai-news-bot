@@ -333,11 +333,17 @@ test('proxy cache persists only public post URLs, never raw MTProto Connect secr
   const DB = {
     prepare(sql) {
       return {
+        sql,
+        values: [],
         bind(...values) {
-          return { async run() { writes.push({ sql, values }); return { meta: { changes: 1 } }; } };
+          return { sql, values, async run() { writes.push({ sql, values }); return { meta: { changes: 1 } }; } };
         },
         async run() { writes.push({ sql, values: [] }); return { meta: { changes: 1 } }; }
       };
+    },
+    async batch(statements) {
+      for (const statement of statements) writes.push({ sql: statement.sql, values: statement.values || [] });
+      return statements.map(() => ({ meta: { changes: 1 } }));
     }
   };
   globalThis.fetch = async () => new Response(html, { status: 200, headers: { 'content-type': 'text/html' } });
