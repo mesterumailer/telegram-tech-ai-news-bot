@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS proxy_post_cache (
+  slot INTEGER PRIMARY KEY CHECK(slot IN (1, 2)),
+  post_url TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
