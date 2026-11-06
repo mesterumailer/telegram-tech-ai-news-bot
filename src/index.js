@@ -131,6 +131,18 @@ export default {
         try { await pruneTelegramWebhookUpdates(env); }
         catch (error) { await logEvent(env, "webhook_update_prune_failed", safeError(error)); }
 
+        // Refresh the public proxy-post cache independently from the news digest.
+        // Only Telegram post URLs are persisted; raw MTProto secrets are never stored.
+        try {
+          const proxyPosts = await refreshProxyPostCache(env);
+          await logEvent(env, "proxy_posts_refreshed", JSON.stringify({
+            count: proxyPosts.length,
+            refreshed_at: new Date().toISOString()
+          }));
+        } catch (error) {
+          await logEvent(env, "proxy_posts_refresh_failed", safeError(error));
+        }
+
         // Refresh trusted RSS sources on every Cron run. Feed discovery is separate
         // from editorial approval: only the GPT-prepared three-story digest is queued.
         try {
@@ -269,7 +281,7 @@ async function processDigest(digest, env, origin) {
   const validation = validateDigest(digest);
   if (!validation.ok) return { ok: false, error: validation.error };
   const proxyLinks = env.PUBLISH_ENABLED === "true"
-    ? await resolveProxyLinksFromDigest(digest, env)
+    ? await getCurrentProxyLinks(env, true)
     : [];
   const outcomes = [];
   for (const story of digest.stories) {
@@ -491,8 +503,11 @@ export async function resolveProxyLinksFromDigest(digest, env) {
       if (postId && !refs.has(postId)) refs.set(postId, label);
     }
   }
+  return resolveProxyPostIds([...refs.entries()].slice(0, 2), env);
+}
 
-  const resolved = await Promise.all([...refs.entries()].slice(0, 2).map(async ([postId, label]) => {
+async function resolveProxyPostIds(entries, env) {
+  const resolved = await Promise.all(entries.map(async ([postId, label]) => {
     try {
       const pageUrl = `https://t.me/s/ProxyMTProto?before=${Number(postId) + 1}`;
       const response = await fetch(pageUrl, {
@@ -505,7 +520,7 @@ export async function resolveProxyLinksFromDigest(digest, env) {
       if (!response.ok) throw new Error(`Telegram proxy post fetch failed with HTTP ${response.status}`);
       const html = (await response.text()).slice(0, 1_000_000);
       const url = extractProxyDeepLinkFromPostHtml(html, `ProxyMTProto/${postId}`);
-      if (!url) throw new Error("MTProto connection details were not found in the proxy post");
+      if (!url) throw new Error("MTProto Connect link was not found in the proxy post");
       return { label, url };
     } catch (error) {
       await logEvent(env, "proxy_resolution_failed", `${postId}: ${safeError(error)}`);
@@ -513,6 +528,95 @@ export async function resolveProxyLinksFromDigest(digest, env) {
     }
   }));
   return resolved.filter(Boolean);
+}
+
+export async function discoverLatestProxyPostUrls() {
+  const postUrls = [];
+  const seen = new Set();
+  let before = null;
+
+  // Telegram's public preview is newest-first. Scan up to three pages to skip
+  // posts with Unknown/invalid servers and find two real Connect links.
+  for (let page = 0; page < 3 && postUrls.length < 2; page++) {
+    const pageUrl = before
+      ? `https://t.me/s/ProxyMTProto?before=${before}`
+      : "https://t.me/s/ProxyMTProto";
+    const response = await fetch(pageUrl, {
+      headers: {
+        "accept": "text/html,application/xhtml+xml",
+        "user-agent": "Mozilla/5.0 (compatible; TelegramNewsPublisher/1.0)"
+      },
+      redirect: "follow"
+    });
+    if (!response.ok) throw new Error(`Telegram proxy feed failed with HTTP ${response.status}`);
+    const html = (await response.text()).slice(0, 2_000_000);
+    const markers = [...html.matchAll(/data-post\\s*=\\s*["']([^"']+)["']/gi)];
+    if (!markers.length) break;
+
+    let oldestId = Number.POSITIVE_INFINITY;
+    for (const marker of markers) {
+      const path = marker[1];
+      const idMatch = path.match(/^ProxyMTProto\\/(\\d+)$/i);
+      if (!idMatch) continue;
+      const postId = idMatch[1];
+      oldestId = Math.min(oldestId, Number(postId));
+      if (seen.has(postId)) continue;
+      seen.add(postId);
+
+      // The same parser validates the actual Connect URL and rejects Unknown
+      // hosts or malformed server/port/secret tuples.
+      const connectUrl = extractProxyDeepLinkFromPostHtml(html, path);
+      if (connectUrl) postUrls.push(`https://t.me/ProxyMTProto/${postId}`);
+      if (postUrls.length === 2) break;
+    }
+    if (postUrls.length === 2 || !Number.isFinite(oldestId)) break;
+    before = oldestId;
+  }
+  return postUrls;
+}
+
+export async function refreshProxyPostCache(env) {
+  if (!env.DB) throw new Error("D1 database binding is unavailable");
+  const postUrls = await discoverLatestProxyPostUrls();
+  // A successful feed read with no valid Connect posts clears stale entries.
+  await env.DB.prepare("DELETE FROM proxy_post_cache").run();
+  for (let index = 0; index < postUrls.length; index++) {
+    await env.DB.prepare(`INSERT INTO proxy_post_cache (slot, post_url, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)`)
+      .bind(index + 1, postUrls[index]).run();
+  }
+  await logEvent(env, "proxy_post_cache_updated", JSON.stringify({ count: postUrls.length }));
+  return postUrls;
+}
+
+async function loadCachedProxyLinks(env) {
+  const result = await env.DB.prepare(
+    "SELECT slot, post_url FROM proxy_post_cache ORDER BY slot ASC"
+  ).all();
+  const stories = [{}];
+  for (const row of result.results || []) {
+    const field = Number(row.slot) === 1 ? "proxy1_url" : Number(row.slot) === 2 ? "proxy2_url" : null;
+    if (field) stories[0][field] = row.post_url;
+  }
+  return resolveProxyLinksFromDigest({ stories }, env);
+}
+
+async function getCurrentProxyLinks(env, refresh = false) {
+  if (refresh) {
+    try {
+      await refreshProxyPostCache(env);
+    } catch (error) {
+      // Keep the last known post references if Telegram is temporarily unavailable.
+      await logEvent(env, "proxy_refresh_using_cached_values", safeError(error));
+    }
+  }
+  try {
+    return await loadCachedProxyLinks(env);
+  } catch (error) {
+    // Proxy failures must never prevent news delivery.
+    await logEvent(env, "proxy_cache_read_failed", safeError(error));
+    return [];
+  }
 }
 
 function findPageImage(html) {
@@ -832,7 +936,7 @@ async function showLatestNews(env, chatId, adminView = true) {
   if (!digest) return sendBotMessage(env, chatId, "هنوز فایل اخبار آماده‌ای در GitHub وجود ندارد.");
   const validation = validateDigest(digest);
   if (!validation.ok) return sendBotMessage(env, chatId, `بسته خبری معتبر نیست: ${validation.error}`);
-  const proxyLinks = await resolveProxyLinksFromDigest(digest, env);
+  const proxyLinks = await getCurrentProxyLinks(env, true);
   if (adminView) await queueDigestForReview(digest, env, "admin_preview");
   const intro = adminView
     ? `🗞 آخرین بسته خبری\\nشناسه: ${escapeHtml(digest.batch_id)}\\nتعداد خبر: ${digest.stories.length}\\n\\nهر خبر را جداگانه بررسی و تأیید یا رد کن.`
@@ -926,7 +1030,7 @@ async function publishNextQueuedStory(env, origin) {
   }
 
   try {
-    const proxyLinks = await resolveProxyLinksFromDigest({ stories: [story] }, env);
+    const proxyLinks = await getCurrentProxyLinks(env, false);
     await sendTelegram(env, story, proxyLinks);
   } catch (error) {
     await upsertStory(env, story, "failed", origin, safeError(error));
@@ -1000,7 +1104,7 @@ async function publishReviewedStory(env, story) {
     ON CONFLICT(story_id) DO UPDATE SET status='pending', origin='telegram_approval', last_error=NULL, updated_at=CURRENT_TIMESTAMP
     WHERE published_stories.status='dry_run'`)
     .bind(story.id, story.source_url, story.title).run();
-  const proxyLinks = await resolveProxyLinksFromDigest({ stories: [story] }, env);
+  const proxyLinks = await getCurrentProxyLinks(env, true);
   await sendTelegram(env, story, proxyLinks);
   await upsertStory(env, story, "sent", "telegram_approval");
 }
