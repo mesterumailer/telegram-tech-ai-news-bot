@@ -550,13 +550,13 @@ export async function discoverLatestProxyPostUrls() {
     });
     if (!response.ok) throw new Error(`Telegram proxy feed failed with HTTP ${response.status}`);
     const html = (await response.text()).slice(0, 2_000_000);
-    const markers = [...html.matchAll(/data-post\\s*=\\s*["']([^"']+)["']/gi)];
+    const markers = [...html.matchAll(/data-post\s*=\s*["']([^"']+)["']/gi)];
     if (!markers.length) break;
 
     let oldestId = Number.POSITIVE_INFINITY;
     for (const marker of markers) {
       const path = marker[1];
-      const idMatch = path.match(/^ProxyMTProto\\/(\\d+)$/i);
+      const idMatch = path.match(/^ProxyMTProto\/(\d+)$/i);
       if (!idMatch) continue;
       const postId = idMatch[1];
       oldestId = Math.min(oldestId, Number(postId));
