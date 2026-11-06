@@ -530,6 +530,27 @@ async function resolveProxyPostIds(entries, env) {
   return resolved.filter(Boolean);
 }
 
+function extractProxyConnectUrlFromPostHtml(html, postPath) {
+  const source = String(html || "");
+  const markerPattern = /data-post\s*=\s*["']([^"']+)["']/gi;
+  let marker;
+  while ((marker = markerPattern.exec(source)) !== null) {
+    if (marker[1].toLowerCase() !== String(postPath).toLowerCase()) continue;
+    const blockStart = source.lastIndexOf("<div", marker.index);
+    const nextMarkerPattern = /data-post\s*=\s*["']([^"']+)["']/gi;
+    nextMarkerPattern.lastIndex = markerPattern.lastIndex;
+    const nextMarker = nextMarkerPattern.exec(source);
+    const blockEnd = nextMarker ? source.lastIndexOf("<div", nextMarker.index) : source.length;
+    const block = source.slice(blockStart >= 0 ? blockStart : 0, blockEnd > blockStart ? blockEnd : source.length);
+    for (const anchor of block.match(/<a\b[^>]*>/gi) || []) {
+      const directLink = normalizeMtprotoProxyUrl(readHtmlAttribute(anchor, "href"));
+      if (directLink) return directLink;
+    }
+    return null;
+  }
+  return null;
+}
+
 export async function discoverLatestProxyPostUrls() {
   const postUrls = [];
   const seen = new Set();
@@ -565,7 +586,7 @@ export async function discoverLatestProxyPostUrls() {
 
       // The same parser validates the actual Connect URL and rejects Unknown
       // hosts or malformed server/port/secret tuples.
-      const connectUrl = extractProxyDeepLinkFromPostHtml(html, path);
+      const connectUrl = extractProxyConnectUrlFromPostHtml(html, path);
       if (connectUrl) postUrls.push(`https://t.me/ProxyMTProto/${postId}`);
       if (postUrls.length === 2) break;
     }
