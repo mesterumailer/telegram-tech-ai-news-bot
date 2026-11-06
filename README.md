@@ -122,7 +122,7 @@ Publication behavior:
 - Only administrative commands and callback actions are restricted by `TELEGRAM_ADMIN_USER_ID`; public users cannot approve/reject stories or change publication settings. Webhook requests are verified with `TELEGRAM_WEBHOOK_SECRET`.
 
 Required Cloudflare setup after deploying this version:
-1. Apply all pending D1 migrations, including `0002_telegram_admin_ui.sql`, `0003_telegram_webhook_idempotency.sql` and `0004_news_feed_items.sql`, to the existing D1 database.
+1. Apply all pending D1 migrations, including `0002_telegram_admin_ui.sql`, `0003_telegram_webhook_idempotency.sql`, `0004_news_feed_items.sql` and `0005_proxy_post_cache.sql`, to the existing D1 database.
 2. Add `TELEGRAM_ADMIN_USER_ID` as a Text variable containing the numeric Telegram user ID of the manager.
 3. Add `TELEGRAM_WEBHOOK_SECRET` as a Secret. Use a random 32+ character value containing only letters, digits, underscores or hyphens.
 4. Call `POST /admin/register-webhook` with `Authorization: Bearer <ADMIN_SECRET>`. This securely registers the Worker URL with Telegram; the bot token is not needed in the PowerShell request.
