@@ -491,7 +491,7 @@ test('does not retry as text after an ambiguous network error on photo send', as
       sendStoryToChat(
         { TELEGRAM_BOT_TOKEN: 'test-token' },
         '@test-channel',
-        { ...stories[0], image_url: 'https://cdn.example.com/news.jpg' }
+        { ...stories[0], image_url: 'https://cdn.example.com/news.jpg', image_credit: 'Example Company', image_alt: 'تصویر رسمی محصول' }
       ),
       /simulated network timeout/
     );
