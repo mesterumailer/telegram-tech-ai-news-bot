@@ -301,9 +301,9 @@ test('resolves the two proxy post references into direct Telegram MTProto links'
 test('discovers the newest two proxy posts with valid Connect links without a digest', async () => {
   const originalFetch = globalThis.fetch;
   const html = [
-    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48260"><a href="https://t.me/proxy?server=unknown&amp;port=443&amp;secret=0123456789abcdef">Connect</a></div>',
+    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48258"><a href="https://t.me/proxy?server=unknown&amp;port=443&amp;secret=0123456789abcdef">Connect</a></div>',
     '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48259"><a href="https://t.me/proxy?server=proxy-new.example&amp;port=443&amp;secret=0123456789abcdef">Connect</a></div>',
-    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48258"><a href="https://t.me/proxy?server=proxy-second.example&amp;port=8443&amp;secret=abcdef0123456789">Connect</a></div>'
+    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48260"><a href="https://t.me/proxy?server=proxy-second.example&amp;port=8443&amp;secret=abcdef0123456789">Connect</a></div>'
   ].join('');
   const requested = [];
   globalThis.fetch = async url => {
@@ -313,8 +313,8 @@ test('discovers the newest two proxy posts with valid Connect links without a di
   try {
     const posts = await discoverLatestProxyPostUrls();
     assert.deepEqual(posts, [
-      'https://t.me/ProxyMTProto/48259',
-      'https://t.me/ProxyMTProto/48258'
+      'https://t.me/ProxyMTProto/48260',
+      'https://t.me/ProxyMTProto/48259'
     ]);
     assert.deepEqual(requested, ['https://t.me/s/ProxyMTProto']);
   } finally {
@@ -356,6 +356,47 @@ test('proxy cache persists only public post URLs, never raw MTProto Connect secr
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('proxy status endpoint reports cache and Connect availability without exposing raw secrets', async () => {
+  const secret = '0123456789abcdef';
+  const html = [
+    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48259"><a href="https://t.me/proxy?server=proxy-new.example&amp;port=443&amp;secret=' + secret + '">Connect</a></div>',
+    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48260"><a href="https://t.me/proxy?server=proxy-second.example&amp;port=8443&amp;secret=abcdef0123456789">Connect</a></div>'
+  ].join('');
+  const DB = {
+    prepare(sql) {
+      return {
+        bind() {
+          return { async run() { return { meta: { changes: 1 } }; } };
+        },
+        async all() {
+          return { results: [
+            { slot: 1, post_url: 'https://t.me/ProxyMTProto/48260', updated_at: '2026-11-07 00:00:00' },
+            { slot: 2, post_url: 'https://t.me/ProxyMTProto/48259', updated_at: '2026-11-07 00:00:00' }
+          ] };
+        }
+      };
+    }
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(html, { status: 200 });
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/proxy-status'), { DB });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.cache_count, 2);
+    assert.equal(body.connect_buttons_available, 2);
+    assert.equal(body.post_urls.length, 2);
+    assert.ok(!JSON.stringify(body).includes(secret));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('manual proxy refresh endpoint requires admin authorization', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/admin/refresh-proxies', { method: 'POST' }), {});
+  assert.equal(response.status, 401);
 });
 
 test('combines admin review callbacks and direct proxy URL buttons in separate rows', () => {
@@ -403,7 +444,7 @@ test('sends a story with an image using Telegram sendPhoto and preserves review 
     await sendStoryToChat(
       { TELEGRAM_BOT_TOKEN: 'test-token' },
       '@test-channel',
-      { ...stories[0], image_url: 'https://cdn.example.com/news.jpg' },
+      { ...stories[0], image_url: 'https://cdn.example.com/news.jpg', image_credit: 'Example Company', image_alt: 'تصویر رسمی محصول' },
       keyboard,
       'در انتظار بررسی'
     );
@@ -430,7 +471,7 @@ test('falls back to a text post when Telegram explicitly rejects the photo', asy
     await sendStoryToChat(
       { TELEGRAM_BOT_TOKEN: 'test-token' },
       '@test-channel',
-      { ...stories[0], image_url: 'https://cdn.example.com/not-an-image' }
+      { ...stories[0], image_url: 'https://cdn.example.com/not-an-image', image_credit: 'Example Company', image_alt: 'تصویر رسمی محصول' }
     );
     assert.deepEqual(methods, ['sendPhoto', 'sendMessage']);
   } finally {
@@ -450,7 +491,7 @@ test('does not retry as text after an ambiguous network error on photo send', as
       sendStoryToChat(
         { TELEGRAM_BOT_TOKEN: 'test-token' },
         '@test-channel',
-        { ...stories[0], image_url: 'https://cdn.example.com/news.jpg' }
+        { ...stories[0], image_url: 'https://cdn.example.com/news.jpg', image_credit: 'Example Company', image_alt: 'تصویر رسمی محصول' }
       ),
       /simulated network timeout/
     );
@@ -460,14 +501,13 @@ test('does not retry as text after an ambiguous network error on photo send', as
   }
 });
 
-test('sends text-only stories with sendMessage when no image is provided', async () => {
+test('sends text-only stories when no complete verified image trio is provided', async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, options) => {
-    if (String(url).startsWith('https://example.com/story-1')) {
-      return new Response('no article image metadata', { status: 404 });
-    }
-    calls.push({ method: url.split('/').pop(), payload: JSON.parse(options.body) });
+    const target = String(url);
+    assert.ok(!target.startsWith('https://example.com/'), 'article page must not be scraped for an unverified image');
+    calls.push({ method: target.split('/').pop(), payload: JSON.parse(options.body) });
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };
   try {
@@ -525,45 +565,21 @@ test('Telegram webhook rejects an incorrect secret', async () => {
 });
 
 
-test('discovers an article og:image and sends the story with sendPhoto when image_url is missing', async () => {
+test('does not auto-attach an unverified article og:image when digest image metadata is absent', async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, options) => {
-    if (String(url).startsWith('https://example.com/story-1')) {
-      return new Response('<html><head><meta property="og:image" content="https://cdn.example.com/story-photo.jpg"></head></html>', {
-        status: 200,
-        headers: { 'content-type': 'text/html; charset=utf-8' }
-      });
+    const target = String(url);
+    if (target.startsWith('https://example.com/')) {
+      throw new Error('Worker must not scrape arbitrary article images');
     }
-    calls.push({ url, payload: JSON.parse(options.body) });
+    calls.push({ url: target, payload: JSON.parse(options.body) });
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };
   try {
     await sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', stories[0]);
     assert.equal(calls.length, 1);
-    assert.match(calls[0].url, /\/sendPhoto$/);
-    assert.equal(calls[0].payload.photo, 'https://cdn.example.com/story-photo.jpg');
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test('resolves relative article image metadata and HTML-escaped URL parameters', async () => {
-  const originalFetch = globalThis.fetch;
-  const calls = [];
-  globalThis.fetch = async (url, options) => {
-    if (String(url).startsWith('https://example.com/story-1')) {
-      return new Response('<meta property="og:image" content="/assets/news.jpg?size=large&amp;format=jpg">', {
-        status: 200,
-        headers: { 'content-type': 'text/html' }
-      });
-    }
-    calls.push({ url, payload: JSON.parse(options.body) });
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
-  };
-  try {
-    await sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', stories[0]);
-    assert.equal(calls[0].payload.photo, 'https://example.com/assets/news.jpg?size=large&format=jpg');
+    assert.match(calls[0].url, /\/sendMessage$/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -757,7 +773,7 @@ test('approve button explains the master publish switch when publishing is disab
 
 
 test('approve button publishes the selected story when the master switch is enabled', async () => {
-  const story = { ...stories[1], image_url: 'https://cdn.example.com/review-story.jpg' };
+  const story = { ...stories[1], image_url: 'https://cdn.example.com/review-story.jpg', image_credit: 'Example Company', image_alt: 'تصویر رسمی محصول' };
   const DB = createReviewDb(story);
   const callbackData = buildStoryReviewKeyboard(story).inline_keyboard[0][0].callback_data;
   const originalFetch = globalThis.fetch;

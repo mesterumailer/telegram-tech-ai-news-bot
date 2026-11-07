@@ -22,6 +22,47 @@ export default {
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ ok: true, service: "telegram-news-publisher", mode: env.PUBLISH_ENABLED === "true" ? "publish" : "dry-run" });
     }
+    if (request.method === "GET" && url.pathname === "/proxy-status") {
+      try {
+        const result = await env.DB.prepare(
+          "SELECT slot, post_url, updated_at FROM proxy_post_cache ORDER BY slot ASC"
+        ).all();
+        const rows = result.results || [];
+        const proxyStories = [{}];
+        for (const row of rows) {
+          const field = Number(row.slot) === 1 ? "proxy1_url" : Number(row.slot) === 2 ? "proxy2_url" : null;
+          if (field) proxyStories[0][field] = row.post_url;
+        }
+        const links = await resolveProxyLinksFromDigest({ stories: proxyStories }, env);
+        return json({
+          ok: true,
+          cache_count: rows.length,
+          connect_buttons_available: links.length,
+          post_urls: rows.map(row => row.post_url),
+          refreshed_at: rows[0]?.updated_at || null,
+          checked_at: new Date().toISOString()
+        });
+      } catch (error) {
+        return json({ ok: false, error: safeError(error) }, 503);
+      }
+    }
+    if (request.method === "POST" && url.pathname === "/admin/refresh-proxies") {
+      if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
+      try {
+        const postUrls = await refreshProxyPostCache(env);
+        const links = await loadCachedProxyLinks(env);
+        return json({
+          ok: true,
+          cache_count: postUrls.length,
+          connect_buttons_available: links.length,
+          post_urls: postUrls,
+          refreshed_at: new Date().toISOString()
+        });
+      } catch (error) {
+        await logEvent(env, "proxy_manual_refresh_failed", safeError(error));
+        return json({ ok: false, error: safeError(error) }, 502);
+      }
+    }
     if (request.method === "POST" && url.pathname === "/telegram/webhook") {
       if (!env.TELEGRAM_WEBHOOK_SECRET || request.headers.get("x-telegram-bot-api-secret-token") !== env.TELEGRAM_WEBHOOK_SECRET) return json({ error: "unauthorized webhook" }, 401);
       let update;
@@ -557,8 +598,7 @@ export async function discoverLatestProxyPostUrls() {
   let before = null;
   let sawPostMarkers = false;
 
-  // Telegram's public preview is newest-first. Scan up to three pages to skip
-  // posts with Unknown/invalid servers and find two real Connect links.
+  // Scan up to three pages, newest valid Connect posts first.
   for (let page = 0; page < 3 && postUrls.length < 2; page++) {
     const pageUrl = before
       ? `https://t.me/s/ProxyMTProto?before=${before}`
@@ -580,17 +620,26 @@ export async function discoverLatestProxyPostUrls() {
     sawPostMarkers = true;
 
     let oldestId = Number.POSITIVE_INFINITY;
-    for (const marker of markers) {
+    const candidates = markers.map(marker => {
       const path = marker[1];
       const idMatch = path.match(/^ProxyMTProto\/(\d+)$/i);
-      if (!idMatch) continue;
-      const postId = idMatch[1];
-      oldestId = Math.min(oldestId, Number(postId));
+      return idMatch ? { path, postId: idMatch[1], numericId: Number(idMatch[1]) } : null;
+    }).filter(Boolean);
+
+    for (const candidate of candidates) {
+      oldestId = Math.min(oldestId, candidate.numericId);
+    }
+
+    // Telegram's public preview is rendered oldest-to-newest (newest posts
+    // appear at the bottom). Sort numerically descending before selecting.
+    candidates.sort((a, b) => b.numericId - a.numericId);
+    for (const candidate of candidates) {
+      const { path, postId } = candidate;
       if (seen.has(postId)) continue;
       seen.add(postId);
 
-      // The same parser validates the actual Connect URL and rejects Unknown
-      // hosts or malformed server/port/secret tuples.
+      // The same parser validates the actual Connect button URL and rejects
+      // Unknown hosts or malformed server/port/secret tuples.
       const connectUrl = extractProxyConnectUrlFromPostHtml(html, path);
       if (connectUrl) postUrls.push(`https://t.me/ProxyMTProto/${postId}`);
       if (postUrls.length === 2) break;
@@ -661,31 +710,18 @@ function findPageImage(html) {
   return candidates[0] || "";
 }
 
-async function resolveStoryImageUrl(story) {
-  if (story.image_url) return story.image_url;
-  try {
-    const source = new URL(story.source_url);
-    if (source.protocol !== "https:") return null;
-    const response = await fetch(source.toString(), {
-      headers: {
-        "accept": "text/html,application/xhtml+xml",
-        "user-agent": "Mozilla/5.0 (compatible; TelegramNewsPublisher/1.0)"
-      },
-      redirect: "follow"
-    });
-    if (!response.ok) return null;
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) return null;
-    const html = (await response.text()).slice(0, 1_000_000);
-    const candidate = findPageImage(html);
-    if (!candidate) return null;
-    const imageUrl = new URL(candidate, response.url || source.toString());
-    if (imageUrl.protocol !== "https:" || !imageUrl.hostname || imageUrl.username || imageUrl.password) return null;
-    if (["localhost", "127.0.0.1", "::1"].includes(imageUrl.hostname.toLowerCase())) return null;
-    return imageUrl.toString();
-  } catch {
-    return null;
-  }
+async function resolveStoryImageUrl(story, env) {
+  // Only use image metadata that was explicitly checked and stored in the digest.
+  // Do not silently attach an arbitrary og:image from an article page.
+  const fields = ["image_url", "image_credit", "image_alt"];
+  const complete = fields.every(key => typeof story?.[key] === "string" && story[key].trim());
+  if (complete) return story.image_url;
+  await logEvent(
+    env,
+    "image_not_found",
+    `${story?.id || "unknown"}: digest does not contain the complete validated image_url/image_credit/image_alt trio`
+  );
+  return null;
 }
 
 export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLabel = "") {
@@ -703,7 +739,7 @@ export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLab
     return { response, result };
   };
 
-  const resolvedImageUrl = await resolveStoryImageUrl(story);
+  const resolvedImageUrl = await resolveStoryImageUrl(story, env);
   if (resolvedImageUrl) {
     const photoPayload = {
       chat_id: chatId,
@@ -719,8 +755,6 @@ export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLab
       throw new Error(`Telegram photo send failed with HTTP ${photoResult.response.status}`);
     }
     await logEvent(env, "photo_send_fallback", `${story.id}: ${safeError(photoResult.result.description || "Telegram rejected the image")}`);
-  } else {
-    await logEvent(env, "image_not_found", `${story.id}: no direct image_url or supported article image metadata`);
   }
 
   const textPayload = {
