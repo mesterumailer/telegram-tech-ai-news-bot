@@ -303,7 +303,7 @@ test('discovers the newest two proxy posts with valid Connect links without a di
   const html = [
     '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48258"><a href="https://t.me/proxy?server=unknown&amp;port=443&amp;secret=0123456789abcdef">Connect</a></div>',
     '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48259"><a href="https://t.me/proxy?server=proxy-new.example&amp;port=443&amp;secret=0123456789abcdef">Connect</a></div>',
-    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48260"><a href="https://t.me/proxy?server=proxy-second.example&amp;port=8443&amp;secret=abcdef0123456789">Connect</a></div>
+    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48260"><a href="https://t.me/proxy?server=proxy-second.example&amp;port=8443&amp;secret=abcdef0123456789">Connect</a></div>'
   ].join('');
   const requested = [];
   globalThis.fetch = async url => {
