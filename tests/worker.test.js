@@ -358,6 +358,47 @@ test('proxy cache persists only public post URLs, never raw MTProto Connect secr
   }
 });
 
+test('proxy status endpoint reports cache and Connect availability without exposing raw secrets', async () => {
+  const secret = '0123456789abcdef';
+  const html = [
+    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48259"><a href="https://t.me/proxy?server=proxy-new.example&amp;port=443&amp;secret=' + secret + '">Connect</a></div>',
+    '<div class="tgme_widget_message_wrap" data-post="ProxyMTProto/48260"><a href="https://t.me/proxy?server=proxy-second.example&amp;port=8443&amp;secret=abcdef0123456789">Connect</a></div>'
+  ].join('');
+  const DB = {
+    prepare(sql) {
+      return {
+        bind() {
+          return { async run() { return { meta: { changes: 1 } }; } };
+        },
+        async all() {
+          return { results: [
+            { slot: 1, post_url: 'https://t.me/ProxyMTProto/48260', updated_at: '2026-11-07 00:00:00' },
+            { slot: 2, post_url: 'https://t.me/ProxyMTProto/48259', updated_at: '2026-11-07 00:00:00' }
+          ] };
+        }
+      };
+    }
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(html, { status: 200 });
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/proxy-status'), { DB });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.cache_count, 2);
+    assert.equal(body.connect_buttons_available, 2);
+    assert.equal(body.post_urls.length, 2);
+    assert.ok(!JSON.stringify(body).includes(secret));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('manual proxy refresh endpoint requires admin authorization', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/admin/refresh-proxies', { method: 'POST' }), {});
+  assert.equal(response.status, 401);
+});
+
 test('combines admin review callbacks and direct proxy URL buttons in separate rows', () => {
   const proxies = [
     { label: 'اتصال پروکسی ۱', url: 'https://t.me/proxy?server=149.154.167.51&port=443&secret=eec16575954a98f1f3277fc329ec45a7' },
