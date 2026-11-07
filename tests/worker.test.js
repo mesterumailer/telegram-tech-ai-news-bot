@@ -773,7 +773,7 @@ test('approve button explains the master publish switch when publishing is disab
 
 
 test('approve button publishes the selected story when the master switch is enabled', async () => {
-  const story = { ...stories[1], image_url: 'https://cdn.example.com/review-story.jpg' };
+  const story = { ...stories[1], image_url: 'https://cdn.example.com/review-story.jpg', image_credit: 'Example Company', image_alt: 'تصویر رسمی محصول' };
   const DB = createReviewDb(story);
   const callbackData = buildStoryReviewKeyboard(story).inline_keyboard[0][0].callback_data;
   const originalFetch = globalThis.fetch;
