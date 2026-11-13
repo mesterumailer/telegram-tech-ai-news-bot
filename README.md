@@ -21,7 +21,7 @@
 - `migrations/0005_proxy_post_cache.sql` — کش پایدار دو URL پست پروکسی؛ فقط URL پست ذخیره می‌شود و Secret خام در D1 یا JSON نگهداری نمی‌شود
 - `examples/ready-digest.json` — نمونه ساختار داده؛ خبر نمونه است و نباید منتشر شود
 - `wrangler.toml` — تنظیمات Worker و Cron هر ۶ ساعت
-- `tests/worker.test.js` — تست‌های اولیه اعتبارسنجی
+- `tests/worker.test.js` — تست‌های اعتبارسنجی و ارسال تصویر\n- `scripts/validate-digest.mjs` — اعتبارسنجی بستهٔ سه‌خبری و بررسی واقعی Content-Type لینک تصاویر\n- `.github/workflows/digest-validation.yml` — کنترل خودکار هر فایل digest جدید در GitHub Actions
 
 ## راه‌اندازی
 
@@ -58,14 +58,25 @@
 
 ## قالب خروجی ChatGPT
 
-فایل `content/ready-digest.json` باید شبیه `examples/ready-digest.json` باشد. برای هر خبر `id` پایدار و یکتا، عنوان فارسی، خلاصه، لینک HTTPS منبع و در صورت امکان دسته و زمان انتشار لازم است. هر batch یک `batch_id` دارد. فیلدهای تصویری اختیاری‌اند: `image_url` در صورت وجود باید لینک مستقیم، عمومی و HTTPS به فایل تصویر باشد (نه لینک صفحه مقاله)، `image_credit` اعتبار دقیق عکاس/شرکت/ناشر و `image_alt` شرح کوتاه تصویر است. اگر هر سه فیلد تصویری وجود نداشته باشند، Worker به‌صورت عمدی هیچ تصویر دلخواهی از صفحه مقاله استخراج نمی‌کند و خبر را متنی می‌فرستد؛ رویداد `image_not_found` با علت ثبت می‌شود. این کار مانع ارسال تصویر با انتساب یا مجوز نامشخص می‌شود.
+فایل `content/ready-digest.json` باید شبیه `examples/ready-digest.json` باشد و دقیقاً سه خبر با شناسه‌های یکتا داشته باشد. **تصویر برای هر سه خبر اجباری است**؛ خبر بدون تصویر معتبر نباید وارد فایل شود و باید با خبر تصویردار دیگری جایگزین شود. اگر نتوان برای هر سه خبر تصویر قانونی و قابل‌دسترسی پیدا کرد، بسته نباید به‌روزرسانی شود.
+
+هر خبر باید این فیلدهای تصویری را هم‌زمان داشته باشد:
+- `image_url`: لینک مستقیم و عمومی HTTPS به فایل واقعی تصویر، نه صفحهٔ مقاله یا صفحهٔ گالری.
+- `image_credit`: انتساب دقیق عکاس، شرکت یا ناشر مطابق منبع.
+- `image_alt`: توصیف کوتاه و دقیق تصویر به فارسی.
+- `image_license`: مجوز یا مبنای روشن استفاده، مانند CC BY 4.0، CC0، Public Domain یا مجوز رسانه‌ای رسمی که صریحاً در منبع اعلام شده باشد.
+- `image_license_url`: لینک HTTPS به صفحه‌ای که مجوز یا اجازهٔ استفاده را مستند می‌کند.
+
+مجوز، عکاس، مالک اثر یا اجازهٔ بازنشر را حدس نزن. تصویر با حق استفادهٔ نامشخص، تصویر تزئینی نامرتبط، لوگوی صرف، URL حدسی و لینک صفحهٔ HTML قابل قبول نیست. اولویت با رسانهٔ رسمی شرکت/محصول و تصاویر دارای مجوز روشن مانند Creative Commons یا Public Domain است. برای هر تصویر، پاسخ سرور باید نوع محتوای تصویری JPEG، PNG یا WebP را نشان دهد؛ اندازهٔ اعلام‌شده نیز در صورت وجود نباید از ۵ مگابایت بیشتر باشد.
+
+Worker نیز همین پنج فیلد را اجباری می‌داند و هیچ خبر ناقصی را وارد صف انتشار نمی‌کند. دستور `npm run validate:digest` ساختار و متادیتا را بررسی می‌کند؛ دستور `npm run validate:digest:remote` علاوه بر آن، URL هر سه تصویر را با درخواست واقعی بررسی و Content-Type نهایی را کنترل می‌کند. GitHub Actions همین کنترل شبکه‌ای را هنگام هر تغییر `content/ready-digest.json` اجرا می‌کند.
 
 
 ## انتشار خبر همراه تصویر
 
 - اگر یک خبر `image_url` معتبر داشته باشد، Worker آن را با متد `sendPhoto` تلگرام ارسال می‌کند؛ متن خبر، لینک منبع، دسته و اعتبار تصویر در کپشن قرار می‌گیرند.
 - کپشن تصویر مطابق محدودیت ۱۰۲۴ نویسه تلگرام کوتاه می‌شود؛ متن کامل خبر در حالت پیام متنی حفظ می‌شود.
-- اگر تلگرام صریحاً تصویر را رد کند (مثلاً لینک مستقیم یا فرمت تصویر قابل دریافت نباشد)، Worker همان خبر را به‌صورت متن ارسال می‌کند و رویداد fallback را ثبت می‌کند.
+- اگر تلگرام تصویر را رد کند یا نتواند آن را دریافت کند، Worker خبر را به‌صورت متن جایگزین نمی‌کند؛ عملیات ناموفق ثبت می‌شود تا تصویر یا URL اصلاح شود. این سیاست تضمین می‌کند خبر بدون تصویر وارد کانال نشود.
 - در خطاهای مبهم شبکه، Worker برای جلوگیری از انتشار تکراری به‌صورت خودکار پیام دوم ارسال نمی‌کند؛ وضعیت باید بررسی شود.
 - بخش `/latest` برای کاربران عمومی و مدیران نیز از تصویر استفاده می‌کند؛ دکمه‌های تأیید و رد مدیر روی پیام تصویری باقی می‌مانند.
 - اولویت با عکس رسمی/خبری دارای مجوز استفاده و اعتبار دقیق تصویر است. لینک باید مستقیماً به فایل تصویر عمومی HTTPS برسد. اگر قابلیت دسترسی، نوع فایل یا حق استفاده مشخص نیست، تصویر را حذف کنید تا خبر به‌صورت متنی نمایش داده شود.
@@ -97,7 +108,7 @@ Body: محتوای JSON مطابق قالب بالا.
 - A digest must contain **exactly three** stories with unique IDs and HTTPS source links. Fewer than three valid stories are rejected; the Worker does not fill gaps.
 - Publishing uses an atomic D1 claim. A story already marked `sent` is skipped.
 - Stories left in `pending` or `failed` are not automatically retried. They are returned as `manual_review_required` (or `failed`) because a timeout/crash can leave uncertainty about whether Telegram accepted the post. This conservative policy avoids accidental duplicate posts; manual reconciliation is required before retrying.
-- The three-story validation currently checks structure and HTTPS, **not** source reputation or factual accuracy. Trusted-source validation and editorial review remain required before enabling publication.
+- The three-story validation checks structure, required image/reuse-rights metadata and HTTPS URLs. GitHub Actions also checks that each image URL actually resolves to JPEG/PNG/WebP content. Source reputation and factual accuracy still require editorial verification before publication.
 
 
 ## Telegram user and admin interface (phase 1)
