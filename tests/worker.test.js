@@ -19,7 +19,12 @@ const stories = [1, 2, 3].map(n => ({
   title: `خبر آزمایشی ${n}`,
   summary: `خلاصه خبر ${n}`,
   source_url: `https://example.com/story-${n}`,
-  category: 'هوش مصنوعی'
+  category: 'هوش مصنوعی',
+  image_url: `https://images.example.com/story-${n}.jpg`,
+  image_credit: 'Example Newsroom',
+  image_alt: `تصویر مرتبط با خبر ${n}`,
+  image_license: 'CC BY 4.0',
+  image_license_url: 'https://creativecommons.org/licenses/by/4.0/'
 }));
 const valid = { batch_id: '2026-10-30-daily', stories };
 
@@ -218,8 +223,30 @@ test('rejects non-HTTPS source URLs', () => assert.equal(validateDigest({ ...val
 test('rejects a story missing its source URL', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: '' }, stories[1], stories[2]] }).ok, false));
 test('rejects oversized story text', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], summary: 'x'.repeat(2501) }, stories[1], stories[2]] }).ok, false));
 
-test('accepts an optional direct HTTPS image URL', () => {
-  const withImage = { ...valid, stories: [{ ...stories[0], image_url: 'https://cdn.example.com/news.jpg', image_credit: 'Example Company', image_alt: 'تصویر نمونه محصول' }, stories[1], stories[2]] };
+test('requires complete verified image metadata for every story', () => {
+  const noImage = { ...stories[0] };
+  delete noImage.image_url;
+  delete noImage.image_credit;
+  delete noImage.image_alt;
+  delete noImage.image_license;
+  delete noImage.image_license_url;
+  const result = validateDigest({ ...valid, stories: [noImage, stories[1], stories[2]] });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /image_url is required/);
+});
+
+test('accepts complete direct HTTPS image and reuse-rights metadata', () => {
+  const withImage = {
+    ...valid,
+    stories: [{
+      ...stories[0],
+      image_url: 'https://cdn.example.com/news.jpg',
+      image_credit: 'Example Company',
+      image_alt: 'تصویر نمونه محصول',
+      image_license: 'CC BY 4.0',
+      image_license_url: 'https://creativecommons.org/licenses/by/4.0/'
+    }, stories[1], stories[2]]
+  };
   assert.deepEqual(validateDigest(withImage), { ok: true });
 });
 
@@ -228,9 +255,18 @@ test('rejects non-HTTPS image URLs', () => {
   assert.equal(validateDigest(withImage).ok, false);
 });
 
-test('rejects malformed image metadata', () => {
-  const withImage = { ...valid, stories: [{ ...stories[0], image_credit: 'x'.repeat(161) }, stories[1], stories[2]] };
+test('rejects non-HTTPS image license evidence URLs', () => {
+  const withImage = { ...valid, stories: [{ ...stories[0], image_license_url: 'http://example.com/license' }, stories[1], stories[2]] };
   assert.equal(validateDigest(withImage).ok, false);
+});
+
+test('rejects missing or oversized image attribution and license data', () => {
+  const missingLicense = { ...stories[0], image_license: '' };
+  assert.equal(validateDigest({ ...valid, stories: [missingLicense, stories[1], stories[2]] }).ok, false);
+  const oversizedCredit = { ...stories[0], image_credit: 'x'.repeat(161) };
+  assert.equal(validateDigest({ ...valid, stories: [oversizedCredit, stories[1], stories[2]] }).ok, false);
+  const oversizedAlt = { ...stories[0], image_alt: 'x'.repeat(301) };
+  assert.equal(validateDigest({ ...valid, stories: [oversizedAlt, stories[1], stories[2]] }).ok, false);
 });
 
 
@@ -459,21 +495,23 @@ test('sends a story with an image using Telegram sendPhoto and preserves review 
   }
 });
 
-test('falls back to a text post when Telegram explicitly rejects the photo', async () => {
+test('does not publish a text-only fallback when Telegram rejects a required photo', async () => {
   const originalFetch = globalThis.fetch;
   const methods = [];
   globalThis.fetch = async (url) => {
     methods.push(url.split('/').pop());
-    if (methods.length === 1) return new Response(JSON.stringify({ ok: false, description: 'wrong file identifier' }), { status: 400 });
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false, description: 'wrong file identifier' }), { status: 400 });
   };
   try {
-    await sendStoryToChat(
-      { TELEGRAM_BOT_TOKEN: 'test-token' },
-      '@test-channel',
-      { ...stories[0], image_url: 'https://cdn.example.com/not-an-image', image_credit: 'Example Company', image_alt: 'تصویر رسمی محصول' }
+    await assert.rejects(
+      sendStoryToChat(
+        { TELEGRAM_BOT_TOKEN: 'test-token' },
+        '@test-channel',
+        { ...stories[0], image_url: 'https://cdn.example.com/not-an-image', image_credit: 'Example Company', image_alt: 'تصویر رسمی محصول' }
+      ),
+      /Telegram photo send failed/
     );
-    assert.deepEqual(methods, ['sendPhoto', 'sendMessage']);
+    assert.deepEqual(methods, ['sendPhoto']);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -501,19 +539,22 @@ test('does not retry as text after an ambiguous network error on photo send', as
   }
 });
 
-test('sends text-only stories when no complete verified image trio is provided', async () => {
+test('refuses to send a news story without verified image metadata', async () => {
   const originalFetch = globalThis.fetch;
-  const calls = [];
-  globalThis.fetch = async (url, options) => {
-    const target = String(url);
-    assert.ok(!target.startsWith('https://example.com/'), 'article page must not be scraped for an unverified image');
-    calls.push({ method: target.split('/').pop(), payload: JSON.parse(options.body) });
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
-  };
+  let callCount = 0;
+  globalThis.fetch = async () => { callCount += 1; throw new Error('Telegram must not be called'); };
+  const noImage = { ...stories[0] };
+  delete noImage.image_url;
+  delete noImage.image_credit;
+  delete noImage.image_alt;
+  delete noImage.image_license;
+  delete noImage.image_license_url;
   try {
-    await sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', stories[0]);
-    assert.deepEqual(calls.map(x => x.method), ['sendMessage']);
-    assert.match(calls[0].payload.text, /<a href="https:\/\/t\.me\/Tech4UsNews">@Tech4UsNews<\/a>/);
+    await assert.rejects(
+      sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', noImage),
+      /image_url is required/
+    );
+    assert.equal(callCount, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
