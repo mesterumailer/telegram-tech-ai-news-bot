@@ -28,7 +28,7 @@ function requirePublicHttps(value, field) {
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
     throw new Error(`${field} must not point to a local host`);
   }
-  if (/^(127\\.|10\\.|192\\.168\\.|169\\.254\\.)/.test(host) || /^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(host)) {
+  if (/^(127\.|10\.|192\.168\.|169\.254\.)/.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host)) {
     throw new Error(`${field} must not point to a private IP address`);
   }
   return url;
@@ -61,7 +61,7 @@ function validateDigest(digest) {
     }
     requirePublicHttps(story.image_license_url, `${prefix}.image_license_url`);
 
-    story.__validatedImageUrl = imageUrl.href;
+    // Validate and normalize only; the digest itself remains unchanged.
   }
   return digest;
 }
@@ -88,7 +88,7 @@ async function inspectImage(url, storyId) {
 
     let size = null;
     const contentRange = response.headers.get("content-range");
-    const totalMatch = contentRange && /\\/(\\d+)$/.exec(contentRange);
+    const totalMatch = contentRange && /\/(\d+)$/.exec(contentRange);
     if (totalMatch) size = Number(totalMatch[1]);
     else if (response.status !== 206) {
       const length = Number(response.headers.get("content-length"));
