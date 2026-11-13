@@ -153,12 +153,14 @@ export default {
       if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
       if (env.TELEGRAM_TEST_ENABLED !== "true") return json({ error: "telegram test endpoint is disabled" }, 403);
       try {
-        await sendTelegram(env, {
+        if (!env.TELEGRAM_CHANNEL_ID) throw new Error("Missing Telegram channel ID");
+        await sendStoryToChat(env, env.TELEGRAM_CHANNEL_ID, {
+          id: "system-test-message",
           title: "پیام آزمایشی ربات اخبار فناوری",
           summary: "این یک پیام آزمایشی است. اگر این پیام را در کانال می‌بینید، اتصال Cloudflare Worker به ربات تلگرام برقرار است. این پیام خبر واقعی نیست.",
           source_url: "https://github.com/mesterumailer/telegram-tech-ai-news-bot",
           category: "آزمایش سیستم"
-        });
+        }, undefined, "", { allowTextOnly: true });
         return json({ ok: true, status: "test_message_sent" });
       } catch (error) {
         return json({ ok: false, error: safeError(error) }, 502);
@@ -257,6 +259,39 @@ async function pruneTelegramWebhookUpdates(env) {
     WHERE created_at < datetime('now', '-30 days')`).run();
 }
 
+export function validateStoryImageMetadata(story, index = 0) {
+  if (!story || typeof story !== "object" || Array.isArray(story)) {
+    return { ok: false, error: `stories[${index}] must be an object` };
+  }
+
+  const requiredFields = ["image_url", "image_credit", "image_alt", "image_license", "image_license_url"];
+  for (const key of requiredFields) {
+    if (typeof story[key] !== "string" || !story[key].trim()) {
+      return { ok: false, error: `stories[${index}].${key} is required; every story must have verified image metadata` };
+    }
+  }
+
+  const urlFields = ["image_url", "image_license_url"];
+  for (const key of urlFields) {
+    if (story[key].length > 2048) return { ok: false, error: `stories[${index}].${key} is invalid` };
+    try {
+      const parsed = new URL(story[key]);
+      if (parsed.protocol !== "https:" || !parsed.hostname || parsed.username || parsed.password) {
+        return { ok: false, error: `stories[${index}].${key} must be a public HTTPS URL` };
+      }
+    } catch {
+      return { ok: false, error: `stories[${index}].${key} is invalid` };
+    }
+  }
+
+  if (story.image_credit.length > 160) return { ok: false, error: `stories[${index}].image_credit is invalid` };
+  if (story.image_alt.length > 300) return { ok: false, error: `stories[${index}].image_alt is invalid` };
+  if (story.image_license.length > 300 || /^(unknown|unclear|not stated|نامشخص|نامعلوم|نامعلوم است)$/i.test(story.image_license.trim())) {
+    return { ok: false, error: `stories[${index}].image_license must state a verifiable reuse basis` };
+  }
+  return { ok: true };
+}
+
 export function validateDigest(digest) {
   if (!digest || typeof digest !== "object" || Array.isArray(digest)) return { ok: false, error: "digest must be a JSON object" };
   if (typeof digest.batch_id !== "string" || !digest.batch_id.trim()) return { ok: false, error: "batch_id is required" };
@@ -274,19 +309,8 @@ export function validateDigest(digest) {
       const parsed = new URL(s.source_url);
       if (parsed.protocol !== "https:") return { ok: false, error: `stories[${i}].source_url must use HTTPS` };
     } catch { return { ok: false, error: `stories[${i}].source_url is invalid` }; }
-    const imageFields = ["image_url", "image_credit", "image_alt"];
-    const imageFieldPresent = imageFields.map(key => typeof s[key] === "string" && s[key].trim().length > 0);
-    if (imageFieldPresent.some(Boolean) && !imageFieldPresent.every(Boolean)) {
-      return { ok: false, error: `stories[${i}] must include image_url, image_credit, and image_alt together, or omit all three` };
-    }
-    if (imageFieldPresent.every(Boolean)) {
-      if (s.image_url.length > 2048) return { ok: false, error: `stories[${i}].image_url is invalid` };
-      try {
-        const imageUrl = new URL(s.image_url);
-        if (imageUrl.protocol !== "https:" || !imageUrl.hostname || imageUrl.username || imageUrl.password) return { ok: false, error: `stories[${i}].image_url must be a public HTTPS URL` };
-      } catch { return { ok: false, error: `stories[${i}].image_url is invalid` }; }
-      if (s.image_credit.length > 160) return { ok: false, error: `stories[${i}].image_credit is invalid` };
-    }
+    const imageValidation = validateStoryImageMetadata(s, i);
+    if (!imageValidation.ok) return imageValidation;
     for (const key of ["proxy1_url", "proxy2_url"]) {
       if (s[key] !== undefined && s[key] !== null && s[key] !== "") {
         if (typeof s[key] !== "string" || s[key].length > 2048) return { ok: false, error: `stories[${i}].${key} is invalid` };
@@ -296,7 +320,6 @@ export function validateDigest(digest) {
         } catch { return { ok: false, error: `stories[${i}].${key} is invalid` }; }
       }
     }
-    if (s.image_alt !== undefined && (typeof s.image_alt !== "string" || s.image_alt.length > 300)) return { ok: false, error: `stories[${i}].image_alt is invalid` };
     if (s.title.length > 300 || s.summary.length > 2500) return { ok: false, error: `stories[${i}] text is too long` };
   }
   return { ok: true };
@@ -711,20 +734,15 @@ function findPageImage(html) {
 }
 
 async function resolveStoryImageUrl(story, env) {
-  // Only use image metadata that was explicitly checked and stored in the digest.
-  // Do not silently attach an arbitrary og:image from an article page.
-  const fields = ["image_url", "image_credit", "image_alt"];
-  const complete = fields.every(key => typeof story?.[key] === "string" && story[key].trim());
-  if (complete) return story.image_url;
-  await logEvent(
-    env,
-    "image_not_found",
-    `${story?.id || "unknown"}: digest does not contain the complete validated image_url/image_credit/image_alt trio`
-  );
-  return null;
+  // News stories must carry complete, reviewed image and reuse-rights metadata.
+  // Never attach an arbitrary og:image or silently downgrade a news post to text.
+  const validation = validateStoryImageMetadata(story);
+  if (validation.ok) return story.image_url;
+  await logEvent(env, "image_not_found", `${story?.id || "unknown"}: ${validation.error}`);
+  throw new Error(validation.error);
 }
 
-export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLabel = "") {
+export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLabel = "", options = {}) {
   if (!env.TELEGRAM_BOT_TOKEN || !chatId) throw new Error("Missing Telegram credentials or target chat");
   const endpoint = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
   const requestTelegram = async (method, payload) => {
@@ -751,10 +769,11 @@ export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLab
     if (replyMarkup) photoPayload.reply_markup = replyMarkup;
     const photoResult = await requestTelegram("sendPhoto", photoPayload);
     if (photoResult.response.ok && photoResult.result?.ok === true) return;
-    if (photoResult.result?.ok !== false) {
-      throw new Error(`Telegram photo send failed with HTTP ${photoResult.response.status}`);
-    }
-    await logEvent(env, "photo_send_fallback", `${story.id}: ${safeError(photoResult.result.description || "Telegram rejected the image")}`);
+    throw new Error(`Telegram photo send failed with HTTP ${photoResult.response.status}: ${photoResult.result?.description || "Telegram rejected the image"}`);
+  }
+
+  if (!options.allowTextOnly) {
+    throw new Error("Refusing to send a news story without a verified image");
   }
 
   const textPayload = {
@@ -1066,6 +1085,14 @@ async function publishNextQueuedStory(env, origin) {
   } catch (error) {
     await logEvent(env, "scheduled_story_invalid_json", `${candidate.story_id}: ${safeError(error)}`);
     return { sent: false, reason: "invalid_queued_story", story_id: candidate.story_id };
+  }
+
+  const imageValidation = validateStoryImageMetadata(story);
+  if (!imageValidation.ok) {
+    await env.DB.prepare("UPDATE story_review_queue SET review_status='rejected', updated_at=CURRENT_TIMESTAMP WHERE story_id=? AND review_status='publishing'")
+      .bind(candidate.story_id).run();
+    await logEvent(env, "scheduled_story_blocked_missing_image", `${candidate.story_id}: ${imageValidation.error}`);
+    return { sent: false, reason: "missing_verified_image_metadata", story_id: candidate.story_id };
   }
 
   const publishClaim = await env.DB.prepare(`INSERT INTO published_stories
