@@ -11,8 +11,10 @@
       "category": "هوش مصنوعی",
       "published_at": "2026-10-30T07:00:00Z",
       "image_url": "https://example.com/story-1.jpg",
-      "image_credit": "نام عکاس یا منبع تصویر",
-      "image_alt": "شرح کوتاه و دقیق تصویر مرتبط با خبر"
+      "image_credit": "Example Newsroom (illustrative placeholder)",
+      "image_alt": "تصویر نمونه مرتبط با خبر شماره 1",
+      "image_license": "CC BY 4.0 (illustrative placeholder; replace with verified terms)",
+      "image_license_url": "https://creativecommons.org/licenses/by/4.0/"
     },
     {
       "id": "example-story-002",
@@ -20,7 +22,12 @@
       "summary": "این متن صرفاً نمونه است و خبر واقعی نیست. آن را با خبر معتبر جایگزین کنید.",
       "source_url": "https://example.com/news-item-2",
       "category": "فناوری",
-      "published_at": "2026-10-30T06:30:00Z"
+      "published_at": "2026-10-30T06:30:00Z",
+      "image_url": "https://example.com/story-2.jpg",
+      "image_credit": "Example Newsroom (illustrative placeholder)",
+      "image_alt": "تصویر نمونه مرتبط با خبر شماره 2",
+      "image_license": "CC BY 4.0 (illustrative placeholder; replace with verified terms)",
+      "image_license_url": "https://creativecommons.org/licenses/by/4.0/"
     },
     {
       "id": "example-story-003",
@@ -28,7 +35,12 @@
       "summary": "این متن صرفاً نمونه است و خبر واقعی نیست. آن را با خبر معتبر جایگزین کنید.",
       "source_url": "https://example.com/news-item-3",
       "category": "کسب‌وکار",
-      "published_at": "2026-10-30T06:00:00Z"
+      "published_at": "2026-10-30T06:00:00Z",
+      "image_url": "https://example.com/story-3.jpg",
+      "image_credit": "Example Newsroom (illustrative placeholder)",
+      "image_alt": "تصویر نمونه مرتبط با خبر شماره 3",
+      "image_license": "CC BY 4.0 (illustrative placeholder; replace with verified terms)",
+      "image_license_url": "https://creativecommons.org/licenses/by/4.0/"
     }
   ]
 }
