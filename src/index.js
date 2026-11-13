@@ -1054,7 +1054,7 @@ async function queueDigestForReview(digest, env, origin) {
   return inserted;
 }
 
-async function publishNextQueuedStory(env, origin) {
+export async function publishNextQueuedStory(env, origin) {
   const candidate = await env.DB.prepare(`SELECT q.story_id, q.story_json, q.batch_id
     FROM story_review_queue q
     LEFT JOIN published_stories p ON p.story_id = q.story_id
