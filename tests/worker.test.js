@@ -631,21 +631,22 @@ test('Telegram webhook rejects an incorrect secret', async () => {
 });
 
 
-test('does not auto-attach an unverified article og:image when digest image metadata is absent', async () => {
+test('does not scrape an article for a missing image and blocks the story', async () => {
   const originalFetch = globalThis.fetch;
-  const calls = [];
-  globalThis.fetch = async (url, options) => {
-    const target = String(url);
-    if (target.startsWith('https://example.com/')) {
-      throw new Error('Worker must not scrape arbitrary article images');
-    }
-    calls.push({ url: target, payload: JSON.parse(options.body) });
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
-  };
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; throw new Error('Telegram must not be called'); };
+  const noImage = { ...stories[0] };
+  delete noImage.image_url;
+  delete noImage.image_credit;
+  delete noImage.image_alt;
+  delete noImage.image_license;
+  delete noImage.image_license_url;
   try {
-    await sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', stories[0]);
-    assert.equal(calls.length, 1);
-    assert.match(calls[0].url, /\/sendMessage$/);
+    await assert.rejects(
+      sendStoryToChat({ TELEGRAM_BOT_TOKEN: 'test-token' }, '@test-channel', noImage),
+      /image_url is required/
+    );
+    assert.equal(calls, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -952,12 +953,12 @@ test('scheduled Cron queues a digest and publishes only one pending story per ru
 
   try {
     await runCron();
-    assert.equal(telegramCalls.filter(method => method === 'sendMessage').length, 1);
+    assert.equal(telegramCalls.filter(method => method === 'sendPhoto').length, 1);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'published').length, 1);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 2);
 
     await runCron();
-    assert.equal(telegramCalls.filter(method => method === 'sendMessage').length, 2);
+    assert.equal(telegramCalls.filter(method => method === 'sendPhoto').length, 2);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'published').length, 2);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 1);
   } finally {
