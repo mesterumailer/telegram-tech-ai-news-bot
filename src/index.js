@@ -733,12 +733,13 @@ function findPageImage(html) {
   return candidates[0] || "";
 }
 
-async function resolveStoryImageUrl(story, env) {
+async function resolveStoryImageUrl(story, env, allowMissing = false) {
   // News stories must carry complete, reviewed image and reuse-rights metadata.
   // Never attach an arbitrary og:image or silently downgrade a news post to text.
   const validation = validateStoryImageMetadata(story);
   if (validation.ok) return story.image_url;
   await logEvent(env, "image_not_found", `${story?.id || "unknown"}: ${validation.error}`);
+  if (allowMissing) return null;
   throw new Error(validation.error);
 }
 
@@ -757,7 +758,7 @@ export async function sendStoryToChat(env, chatId, story, replyMarkup, statusLab
     return { response, result };
   };
 
-  const resolvedImageUrl = await resolveStoryImageUrl(story, env);
+  const resolvedImageUrl = await resolveStoryImageUrl(story, env, options.allowTextOnly === true);
   if (resolvedImageUrl) {
     const photoPayload = {
       chat_id: chatId,
