@@ -10,7 +10,8 @@ import worker, {
   extractProxyDeepLinkFromPostHtml,
   resolveProxyLinksFromDigest,
   discoverLatestProxyPostUrls,
-  refreshProxyPostCache
+  refreshProxyPostCache,
+  publishNextQueuedStory
 } from '../src/index.js';
 import { parseNewsFeedXml, NEWS_FEEDS } from '../src/news-feed.js';
 
@@ -215,6 +216,30 @@ function createSchedulerDb() {
 }
 
 test('accepts exactly three valid stories with HTTPS sources', () => assert.deepEqual(validateDigest(valid), { ok: true }));
+test('blocks legacy queued stories that lack verified image metadata', async () => {
+  const DB = createSchedulerDb();
+  const legacyStory = { ...stories[0] };
+  delete legacyStory.image_url;
+  delete legacyStory.image_credit;
+  delete legacyStory.image_alt;
+  delete legacyStory.image_license;
+  delete legacyStory.image_license_url;
+  DB.queue.set(legacyStory.id, {
+    story_id: legacyStory.id,
+    batch_id: 'legacy-batch',
+    story_json: JSON.stringify(legacyStory),
+    review_status: 'pending',
+    origin: 'scheduled'
+  });
+
+  const result = await publishNextQueuedStory({ DB, PUBLISH_ENABLED: 'true' }, 'scheduled');
+
+  assert.equal(result.reason, 'missing_verified_image_metadata');
+  assert.equal(DB.queue.get(legacyStory.id).review_status, 'rejected');
+  assert.equal(DB.published.has(legacyStory.id), false);
+  assert.ok(DB.events.some(event => event.event === 'scheduled_story_blocked_missing_image'));
+});
+
 test('rejects a digest without a batch id', () => assert.equal(validateDigest({ ...valid, batch_id: '' }).ok, false));
 test('rejects fewer than three stories', () => assert.equal(validateDigest({ ...valid, stories: stories.slice(0, 2) }).ok, false));
 test('rejects more than three stories', () => assert.equal(validateDigest({ ...valid, stories: [...stories, { ...stories[0], id: 'story-4' }] }).ok, false));
