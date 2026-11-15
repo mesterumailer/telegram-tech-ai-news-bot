@@ -1055,11 +1055,21 @@ async function queueDigestForReview(digest, env, origin) {
 }
 
 export async function publishNextQueuedStory(env, origin) {
+  // Legacy queue rows without all five image/reuse-rights fields are kept
+  // pending for manual reconciliation. Exclude them in SQL so they cannot be
+  // rejected or block newer stories that satisfy the verified-image policy.
   const candidate = await env.DB.prepare(`SELECT q.story_id, q.story_json, q.batch_id
     FROM story_review_queue q
     LEFT JOIN published_stories p ON p.story_id = q.story_id
     WHERE q.review_status = 'pending'
       AND (p.story_id IS NULL OR p.status = 'dry_run')
+      AND CASE WHEN json_valid(q.story_json) THEN
+        json_type(q.story_json, '$.image_url') = 'text' AND trim(json_extract(q.story_json, '$.image_url')) <> ''
+        AND json_type(q.story_json, '$.image_credit') = 'text' AND trim(json_extract(q.story_json, '$.image_credit')) <> ''
+        AND json_type(q.story_json, '$.image_alt') = 'text' AND trim(json_extract(q.story_json, '$.image_alt')) <> ''
+        AND json_type(q.story_json, '$.image_license') = 'text' AND trim(json_extract(q.story_json, '$.image_license')) <> ''
+        AND json_type(q.story_json, '$.image_license_url') = 'text' AND trim(json_extract(q.story_json, '$.image_license_url')) <> ''
+      ELSE 0 END
     ORDER BY q.updated_at ASC, q.story_id ASC
     LIMIT 1`).first();
 
