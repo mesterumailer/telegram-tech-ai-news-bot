@@ -18,3 +18,7 @@ jobs:
         run: npm test
       - name: Check Worker syntax
         run: node --check src/index.js
+      - name: Check digest validator syntax
+        run: node --check scripts/validate-digest.mjs
+      - name: Validate example digest schema
+        run: node scripts/validate-digest.mjs examples/ready-digest.json

@@ -1,0 +1,9 @@
+# Used only to apply SQL migrations to the isolated Worker Preview database.
+# This file intentionally contains no production D1 binding.
+name = "telegram-tech-ai-news-preview-migrations"
+
+[[d1_databases]]
+binding = "PREVIEW_DB"
+database_name = "telegram-news-state-preview"
+database_id = "84d3b0d4-010b-4288-b696-df5178f4120c"
+migrations_dir = "migrations"
