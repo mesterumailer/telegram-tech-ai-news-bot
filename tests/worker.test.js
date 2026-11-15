@@ -250,6 +250,59 @@ test('preserves legacy queued stories without verified images for manual reconci
   assert.ok(DB.statements.some(statement => statement.sql.includes('json_valid(q.story_json)')));
 });
 
+test('skips legacy pending rows and publishes an eligible verified-image story', async () => {
+  const DB = createSchedulerDb();
+  const legacyStory = {
+    id: '000-legacy-story',
+    title: 'خبر قدیمی بدون تصویر',
+    summary: 'این رکورد قدیمی نباید حذف یا رد شود.',
+    source_url: 'https://example.com/legacy'
+  };
+  DB.queue.set(legacyStory.id, {
+    story_id: legacyStory.id,
+    batch_id: 'legacy-batch',
+    story_json: JSON.stringify(legacyStory),
+    review_status: 'pending',
+    origin: 'scheduled'
+  });
+  DB.queue.set(stories[0].id, {
+    story_id: stories[0].id,
+    batch_id: 'verified-batch',
+    story_json: JSON.stringify(stories[0]),
+    review_status: 'pending',
+    origin: 'scheduled'
+  });
+
+  const originalFetch = globalThis.fetch;
+  const telegramMethods = [];
+  globalThis.fetch = async url => {
+    const target = String(url);
+    if (target.startsWith('https://api.telegram.org/')) {
+      telegramMethods.push(target.split('/').pop());
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }
+    throw new Error(`Unexpected network request in regression test: ${target}`);
+  };
+
+  try {
+    const result = await publishNextQueuedStory({
+      DB,
+      PUBLISH_ENABLED: 'true',
+      TELEGRAM_BOT_TOKEN: 'test-token',
+      TELEGRAM_CHANNEL_ID: '@test-channel'
+    }, 'scheduled');
+
+    assert.equal(result.sent, true);
+    assert.equal(result.story_id, stories[0].id);
+    assert.equal(DB.queue.get(legacyStory.id).review_status, 'pending');
+    assert.equal(DB.queue.get(stories[0].id).review_status, 'published');
+    assert.equal(DB.published.get(stories[0].id).status, 'sent');
+    assert.deepEqual(telegramMethods, ['sendPhoto']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('rejects a digest without a batch id', () => assert.equal(validateDigest({ ...valid, batch_id: '' }).ok, false));
 test('rejects fewer than three stories', () => assert.equal(validateDigest({ ...valid, stories: stories.slice(0, 2) }).ok, false));
 test('rejects more than three stories', () => assert.equal(validateDigest({ ...valid, stories: [...stories, { ...stories[0], id: 'story-4' }] }).ok, false));
