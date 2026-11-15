@@ -152,6 +152,15 @@ function createSchedulerDb() {
               const prior = published.get(item.story_id);
               return !prior || prior.status === 'dry_run';
             })
+            .filter(item => {
+              try {
+                const story = JSON.parse(item.story_json);
+                return ['image_url', 'image_credit', 'image_alt', 'image_license', 'image_license_url']
+                  .every(key => typeof story[key] === 'string' && story[key].trim());
+              } catch {
+                return false;
+              }
+            })
             .sort((a, b) => a.story_id.localeCompare(b.story_id))[0];
           return row ? { ...row } : null;
         }
@@ -216,7 +225,7 @@ function createSchedulerDb() {
 }
 
 test('accepts exactly three valid stories with HTTPS sources', () => assert.deepEqual(validateDigest(valid), { ok: true }));
-test('blocks legacy queued stories that lack verified image metadata', async () => {
+test('preserves legacy queued stories without verified images for manual reconciliation', async () => {
   const DB = createSchedulerDb();
   const legacyStory = { ...stories[0] };
   delete legacyStory.image_url;
@@ -234,10 +243,11 @@ test('blocks legacy queued stories that lack verified image metadata', async () 
 
   const result = await publishNextQueuedStory({ DB, PUBLISH_ENABLED: 'true' }, 'scheduled');
 
-  assert.equal(result.reason, 'missing_verified_image_metadata');
-  assert.equal(DB.queue.get(legacyStory.id).review_status, 'rejected');
+  assert.equal(result.reason, 'no_unpublished_stories');
+  assert.equal(DB.queue.get(legacyStory.id).review_status, 'pending');
   assert.equal(DB.published.has(legacyStory.id), false);
-  assert.ok(DB.events.some(event => event.event === 'scheduled_story_blocked_missing_image'));
+  assert.equal(DB.events.some(event => event.event === 'scheduled_story_blocked_missing_image'), false);
+  assert.ok(DB.statements.some(statement => statement.sql.includes('json_valid(q.story_json)')));
 });
 
 test('rejects a digest without a batch id', () => assert.equal(validateDigest({ ...valid, batch_id: '' }).ok, false));
