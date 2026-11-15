@@ -21,7 +21,9 @@
 - `migrations/0005_proxy_post_cache.sql` — کش پایدار دو URL پست پروکسی؛ فقط URL پست ذخیره می‌شود و Secret خام در D1 یا JSON نگهداری نمی‌شود
 - `examples/ready-digest.json` — نمونه ساختار داده؛ خبر نمونه است و نباید منتشر شود
 - `wrangler.toml` — تنظیمات Worker و Cron هر ۶ ساعت
-- `tests/worker.test.js` — تست‌های اعتبارسنجی و ارسال تصویر\n- `scripts/validate-digest.mjs` — اعتبارسنجی بستهٔ سه‌خبری و بررسی واقعی Content-Type لینک تصاویر\n- `.github/workflows/digest-validation.yml` — کنترل خودکار هر فایل digest جدید در GitHub Actions
+- `tests/worker.test.js` — تست‌های اعتبارسنجی و ارسال تصویر
+- `scripts/validate-digest.mjs` — اعتبارسنجی بستهٔ سه‌خبری و بررسی واقعی Content-Type لینک تصاویر
+- `.github/workflows/digest-validation.yml` — کنترل خودکار هر فایل digest جدید در GitHub Actions
 
 ## راه‌اندازی
 
