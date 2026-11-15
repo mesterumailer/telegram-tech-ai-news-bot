@@ -1063,13 +1063,13 @@ export async function publishNextQueuedStory(env, origin) {
     LEFT JOIN published_stories p ON p.story_id = q.story_id
     WHERE q.review_status = 'pending'
       AND (p.story_id IS NULL OR p.status = 'dry_run')
-      AND CASE WHEN json_valid(q.story_json) THEN
+      AND COALESCE(CASE WHEN json_valid(q.story_json) THEN
         json_type(q.story_json, '$.image_url') = 'text' AND trim(json_extract(q.story_json, '$.image_url')) <> ''
         AND json_type(q.story_json, '$.image_credit') = 'text' AND trim(json_extract(q.story_json, '$.image_credit')) <> ''
         AND json_type(q.story_json, '$.image_alt') = 'text' AND trim(json_extract(q.story_json, '$.image_alt')) <> ''
         AND json_type(q.story_json, '$.image_license') = 'text' AND trim(json_extract(q.story_json, '$.image_license')) <> ''
         AND json_type(q.story_json, '$.image_license_url') = 'text' AND trim(json_extract(q.story_json, '$.image_license_url')) <> ''
-      ELSE 0 END
+      ELSE 0 END, 0) = 1
     ORDER BY q.updated_at ASC, q.story_id ASC
     LIMIT 1`).first();
 
