@@ -46,6 +46,23 @@ export default {
         return json({ ok: false, error: safeError(error) }, 503);
       }
     }
+    if (request.method === "POST" && url.pathname === "/admin/refresh-feeds") {
+      if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
+      try {
+        // This endpoint only fetches and stores RSS candidates. It never queues,
+        // approves, or publishes stories and does not send Telegram messages.
+        const feedReport = await refreshNewsFeeds(env);
+        await logEvent(env, "news_feeds_manual_refreshed", JSON.stringify(feedReport));
+        return json({
+          ok: true,
+          ...feedReport,
+          refreshed_at: new Date().toISOString()
+        });
+      } catch (error) {
+        await logEvent(env, "news_feed_manual_refresh_failed", safeError(error));
+        return json({ ok: false, error: safeError(error) }, 502);
+      }
+    }
     if (request.method === "POST" && url.pathname === "/admin/refresh-proxies") {
       if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
       try {
