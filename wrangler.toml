@@ -21,3 +21,19 @@ GITHUB_OWNER = "mesterumailer"
 GITHUB_REPO = "telegram-tech-ai-news-bot"
 GITHUB_BRANCH = "main"
 GITHUB_PATH = "content/ready-digest.json"
+
+# Branch Previews use an isolated D1 database and cannot publish to Telegram.
+[previews.vars]
+PUBLISH_ENABLED = "false"
+TELEGRAM_TEST_ENABLED = "false"
+GITHUB_OWNER = "mesterumailer"
+GITHUB_REPO = "telegram-tech-ai-news-bot"
+GITHUB_BRANCH = "main"
+GITHUB_PATH = "content/ready-digest.json"
+
+[[previews.d1_databases]]
+binding = "DB"
+database_name = "telegram-news-state-preview"
+database_id = "84d3b0d4-010b-4286-b696-df5178f4120c"
+migrations_dir = "migrations"
+
