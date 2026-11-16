@@ -31,9 +31,8 @@ GITHUB_REPO = "telegram-tech-ai-news-bot"
 GITHUB_BRANCH = "main"
 GITHUB_PATH = "content/ready-digest.json"
 
-[[previews.d1_databases]]
-binding = "DB"
-database_name = "telegram-news-state-preview"
-database_id = "84d3b0d4-010b-4286-b696-df5178f4120c"
-migrations_dir = "migrations"
+# D1 is intentionally not bound to branch Previews while Cloudflare's
+# preview-version API returns error 10181 for this existing database UUID.
+# Production retains its top-level DB binding unchanged. Unit tests cover
+# the manual refresh route with an isolated in-memory D1 test double.
 
