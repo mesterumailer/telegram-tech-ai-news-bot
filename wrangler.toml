@@ -21,3 +21,18 @@ GITHUB_OWNER = "mesterumailer"
 GITHUB_REPO = "telegram-tech-ai-news-bot"
 GITHUB_BRANCH = "main"
 GITHUB_PATH = "content/ready-digest.json"
+
+# Branch Previews use an isolated D1 database and cannot publish to Telegram.
+[previews.vars]
+PUBLISH_ENABLED = "false"
+TELEGRAM_TEST_ENABLED = "false"
+GITHUB_OWNER = "mesterumailer"
+GITHUB_REPO = "telegram-tech-ai-news-bot"
+GITHUB_BRANCH = "main"
+GITHUB_PATH = "content/ready-digest.json"
+
+# D1 is intentionally not bound to branch Previews while Cloudflare's
+# preview-version API returns error 10181 for this existing database UUID.
+# Production retains its top-level DB binding unchanged. Unit tests cover
+# the manual refresh route with an isolated in-memory D1 test double.
+

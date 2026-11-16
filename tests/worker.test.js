@@ -969,3 +969,61 @@ test('parses Atom entries and ignores stale or non-HTTPS feed links', () => {
   assert.equal(items[0].title, 'Fresh atom story');
   assert.equal(items[0].source_url, 'https://example.com/fresh');
 });
+
+
+test('manual RSS refresh endpoint requires admin authorization', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/admin/refresh-feeds', { method: 'POST' }), {});
+  assert.equal(response.status, 401);
+});
+
+test('manual RSS refresh endpoint stores feed candidates without publishing or messaging', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls = [];
+  const statements = [];
+  const xml = `<?xml version="1.0"?>
+    <rss><channel><item>
+      <title>Verified RSS test item</title>
+      <link>https://example.com/rss-test-item</link>
+      <pubDate>Sun, 15 Nov 2026 12:00:00 GMT</pubDate>
+      <description>Test summary</description>
+    </item></channel></rss>`;
+  globalThis.fetch = async url => {
+    requestedUrls.push(String(url));
+    return new Response(xml, {
+      status: 200,
+      headers: { 'content-type': 'application/rss+xml; charset=utf-8' }
+    });
+  };
+  const DB = {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            async run() {
+              statements.push({ sql, values });
+              return { meta: { changes: 1 } };
+            }
+          };
+        }
+      };
+    }
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/admin/refresh-feeds', {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-admin-secret' }
+    }), { ADMIN_SECRET: 'test-admin-secret', DB });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.feeds_checked, NEWS_FEEDS.length);
+    assert.equal(body.feeds_ok, NEWS_FEEDS.length);
+    assert.equal(body.stored_items, NEWS_FEEDS.length);
+    assert.equal(requestedUrls.length, NEWS_FEEDS.length);
+    assert.ok(statements.some(item => item.sql.includes('INSERT INTO news_feed_items')));
+    assert.ok(!statements.some(item => /published_stories|story_review_queue|telegram/i.test(item.sql)));
+    assert.ok(!requestedUrls.some(url => url.includes('api.telegram.org')));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
