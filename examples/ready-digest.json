@@ -29,6 +29,22 @@
       "source_url": "https://example.com/news-item-3",
       "category": "کسب‌وکار",
       "published_at": "2026-10-30T06:00:00Z"
+    },
+    {
+      "id": "example-story-004",
+      "title": "عنوان فارسی خبر نمونه چهارم",
+      "summary": "این متن صرفاً نمونه است و خبر واقعی نیست. آن را با خبر معتبر جایگزین کنید.",
+      "source_url": "https://example.com/news-item-4",
+      "category": "امنیت سایبری",
+      "published_at": "2026-10-30T05:30:00Z"
+    },
+    {
+      "id": "example-story-005",
+      "title": "عنوان فارسی خبر نمونه پنجم",
+      "summary": "این متن صرفاً نمونه است و خبر واقعی نیست. آن را با خبر معتبر جایگزین کنید.",
+      "source_url": "https://example.com/news-item-5",
+      "category": "کسب‌وکار",
+      "published_at": "2026-10-30T05:00:00Z"
     }
   ]
 }
