@@ -14,7 +14,7 @@ import worker, {
 } from '../src/index.js';
 import { parseNewsFeedXml, NEWS_FEEDS } from '../src/news-feed.js';
 
-const stories = [1, 2, 3].map(n => ({
+const stories = [1, 2, 3, 4, 5].map(n => ({
   id: `story-${n}`,
   title: `خبر آزمایشی ${n}`,
   summary: `خلاصه خبر ${n}`,
@@ -209,27 +209,36 @@ function createSchedulerDb() {
   };
 }
 
-test('accepts exactly three valid stories with HTTPS sources', () => assert.deepEqual(validateDigest(valid), { ok: true }));
+test('accepts a five-story digest and the ten-story maximum', () => {
+  assert.deepEqual(validateDigest(valid), { ok: true });
+  const tenStories = Array.from({ length: 10 }, (_, index) => ({
+    id: `story-${index + 1}`,
+    title: `خبر آزمایشی ${index + 1}`,
+    summary: `خلاصه خبر ${index + 1}`,
+    source_url: `https://example.com/story-${index + 1}`
+  }));
+  assert.deepEqual(validateDigest({ ...valid, stories: tenStories }), { ok: true });
+});
 test('rejects a digest without a batch id', () => assert.equal(validateDigest({ ...valid, batch_id: '' }).ok, false));
-test('rejects fewer than three stories', () => assert.equal(validateDigest({ ...valid, stories: stories.slice(0, 2) }).ok, false));
-test('rejects more than three stories', () => assert.equal(validateDigest({ ...valid, stories: [...stories, { ...stories[0], id: 'story-4' }] }).ok, false));
-test('rejects duplicate story ids', () => assert.equal(validateDigest({ ...valid, stories: [stories[0], stories[1], { ...stories[2], id: stories[0].id }] }).ok, false));
-test('rejects non-HTTPS source URLs', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: 'http://example.com' }, stories[1], stories[2]] }).ok, false));
-test('rejects a story missing its source URL', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: '' }, stories[1], stories[2]] }).ok, false));
-test('rejects oversized story text', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], summary: 'x'.repeat(2501) }, stories[1], stories[2]] }).ok, false));
+test('rejects fewer than five stories', () => assert.equal(validateDigest({ ...valid, stories: stories.slice(0, 4) }).ok, false));
+test('rejects more than ten stories', () => assert.equal(validateDigest({ ...valid, stories: [...stories, ...Array.from({ length: 6 }, (_, index) => ({ ...stories[0], id: `extra-${index + 1}` }))] }).ok, false));
+test('rejects duplicate story ids', () => assert.equal(validateDigest({ ...valid, stories: [stories[0], stories[1], { ...stories[2], id: stories[0].id }, stories[3], stories[4]] }).ok, false));
+test('rejects non-HTTPS source URLs', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: 'http://example.com' }, ...stories.slice(1)] }).ok, false));
+test('rejects a story missing its source URL', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: '' }, ...stories.slice(1)] }).ok, false));
+test('rejects oversized story text', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], summary: 'x'.repeat(2501) }, ...stories.slice(1)] }).ok, false));
 
 test('accepts an optional direct HTTPS image URL', () => {
-  const withImage = { ...valid, stories: [{ ...stories[0], image_url: 'https://cdn.example.com/news.jpg', image_credit: 'Example Company', image_alt: 'تصویر نمونه محصول' }, stories[1], stories[2]] };
+  const withImage = { ...valid, stories: stories.map((story, index) => index === 0 ? { ...story, image_url: 'https://cdn.example.com/news.jpg', image_credit: 'Example Company', image_alt: 'تصویر نمونه محصول' } : story) };
   assert.deepEqual(validateDigest(withImage), { ok: true });
 });
 
 test('rejects non-HTTPS image URLs', () => {
-  const withImage = { ...valid, stories: [{ ...stories[0], image_url: 'http://cdn.example.com/news.jpg' }, stories[1], stories[2]] };
+  const withImage = { ...valid, stories: stories.map((story, index) => index === 0 ? { ...story, image_url: 'http://cdn.example.com/news.jpg' } : story) };
   assert.equal(validateDigest(withImage).ok, false);
 });
 
 test('rejects malformed image metadata', () => {
-  const withImage = { ...valid, stories: [{ ...stories[0], image_credit: 'x'.repeat(161) }, stories[1], stories[2]] };
+  const withImage = { ...valid, stories: stories.map((story, index) => index === 0 ? { ...story, image_credit: 'x'.repeat(161) } : story) };
   assert.equal(validateDigest(withImage).ok, false);
 });
 
@@ -412,7 +421,7 @@ test('combines admin review callbacks and direct proxy URL buttons in separate r
 });
 
 test('rejects non-HTTPS proxy links', () => {
-  const invalid = { ...valid, stories: [{ ...stories[0], proxy1_url: 'http://t.me/proxy' }, stories[1], stories[2]] };
+  const invalid = { ...valid, stories: stories.map((story, index) => index === 0 ? { ...story, proxy1_url: 'http://t.me/proxy' } : story) };
   assert.equal(validateDigest(invalid).ok, false);
 });
 
@@ -888,12 +897,12 @@ test('scheduled Cron queues a digest and publishes only one pending story per ru
     await runCron();
     assert.equal(telegramCalls.filter(method => method === 'sendMessage').length, 1);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'published').length, 1);
-    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 2);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 4);
 
     await runCron();
     assert.equal(telegramCalls.filter(method => method === 'sendMessage').length, 2);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'published').length, 2);
-    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 1);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 5);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -926,7 +935,7 @@ test('scheduled Cron keeps the queue but sends nothing while PUBLISH_ENABLED is 
       PUBLISH_ENABLED: 'false'
     }, { waitUntil(promise) { pending.push(promise); } });
     await Promise.all(pending);
-    assert.equal(DB.queue.size, 3);
+    assert.equal(DB.queue.size, 5);
     assert.equal(telegramCalls, 0);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 3);
   } finally {
