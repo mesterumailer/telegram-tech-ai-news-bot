@@ -1,6 +1,8 @@
 import { refreshNewsFeeds, listNewsFeedCandidates } from "./news-feed.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
+const MIN_DIGEST_STORIES = 5;
+const MAX_DIGEST_STORIES = 10;
 
 export default {
   async fetch(request, env, ctx) {
@@ -277,7 +279,9 @@ async function pruneTelegramWebhookUpdates(env) {
 export function validateDigest(digest) {
   if (!digest || typeof digest !== "object" || Array.isArray(digest)) return { ok: false, error: "digest must be a JSON object" };
   if (typeof digest.batch_id !== "string" || !digest.batch_id.trim()) return { ok: false, error: "batch_id is required" };
-  if (!Array.isArray(digest.stories) || digest.stories.length !== 3) return { ok: false, error: "exactly 3 validated stories are required" };
+  if (!Array.isArray(digest.stories) || digest.stories.length < MIN_DIGEST_STORIES || digest.stories.length > MAX_DIGEST_STORIES) {
+    return { ok: false, error: `between ${MIN_DIGEST_STORIES} and ${MAX_DIGEST_STORIES} validated stories are required` };
+  }
   const ids = new Set();
   for (let i = 0; i < digest.stories.length; i++) {
     const s = digest.stories[i];
