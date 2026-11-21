@@ -734,7 +734,7 @@ test('rapid latest-news button clicks are throttled for the same private chat', 
 
     assert.equal(first.status, 200);
     assert.equal(second.status, 200);
-    assert.equal(calls.filter(x => x.url.endsWith('/sendPhoto')).length, 3);
+    assert.equal(calls.filter(x => x.url.endsWith('/sendPhoto')).length, 5);
     assert.equal(calls.filter(x => x.url.endsWith('/sendMessage') && /آخرین بسته خبری/.test(x.payload.text)).length, 1);
     const throttledToast = calls.find(x =>
       x.url.endsWith('/answerCallbackQuery') &&
@@ -902,7 +902,7 @@ test('scheduled Cron queues a digest and publishes only one pending story per ru
     await runCron();
     assert.equal(telegramCalls.filter(method => method === 'sendMessage').length, 2);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'published').length, 2);
-    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 5);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 3);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -937,7 +937,7 @@ test('scheduled Cron keeps the queue but sends nothing while PUBLISH_ENABLED is 
     await Promise.all(pending);
     assert.equal(DB.queue.size, 5);
     assert.equal(telegramCalls, 0);
-    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 3);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 5);
   } finally {
     globalThis.fetch = originalFetch;
   }
