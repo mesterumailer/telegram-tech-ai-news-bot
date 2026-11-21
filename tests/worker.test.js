@@ -14,7 +14,7 @@ import worker, {
 } from '../src/index.js';
 import { parseNewsFeedXml, NEWS_FEEDS } from '../src/news-feed.js';
 
-const stories = [1, 2, 3].map(n => ({
+const stories = [1, 2, 3, 4, 5].map(n => ({
   id: `story-${n}`,
   title: `خبر آزمایشی ${n}`,
   summary: `خلاصه خبر ${n}`,
@@ -140,14 +140,22 @@ function createSchedulerDb() {
       async first() {
         statements.push({ sql, values, method: 'first' });
         if (sql.includes('FROM story_review_queue q')) {
-          const row = [...queue.values()]
+          const eligible = [...queue.values()]
             .filter(item => item.review_status === 'pending')
             .filter(item => {
               const prior = published.get(item.story_id);
               return !prior || prior.status === 'dry_run';
-            })
-            .sort((a, b) => a.story_id.localeCompare(b.story_id))[0];
-          return row ? { ...row } : null;
+            });
+          const storyDate = item => {
+            try { return JSON.parse(item.story_json).published_at || item.updated_at || ''; }
+            catch { return item.updated_at || ''; }
+          };
+          if (sql.includes('LIMIT -1 OFFSET ?')) {
+            eligible.sort((a, b) => storyDate(b).localeCompare(storyDate(a)) || b.story_id.localeCompare(a.story_id));
+            return { results: eligible.slice(Number(values[0]) || 0).map(item => ({ story_id: item.story_id })) };
+          }
+          eligible.sort((a, b) => storyDate(a).localeCompare(storyDate(b)) || a.story_id.localeCompare(b.story_id));
+          return eligible[0] ? { ...eligible[0] } : null;
         }
         if (sql.includes('SELECT status FROM published_stories')) {
           return published.get(values[0]) || null;
@@ -156,10 +164,31 @@ function createSchedulerDb() {
       },
       async all() {
         statements.push({ sql, values, method: 'all' });
+        if (sql.includes('FROM story_review_queue q') && sql.includes('LIMIT -1 OFFSET ?')) {
+          const eligible = [...queue.values()]
+            .filter(item => item.review_status === 'pending')
+            .filter(item => {
+              const prior = published.get(item.story_id);
+              return !prior || prior.status === 'dry_run';
+            });
+          const storyDate = item => {
+            try { return JSON.parse(item.story_json).published_at || item.updated_at || ''; }
+            catch { return item.updated_at || ''; }
+          };
+          eligible.sort((a, b) => storyDate(b).localeCompare(storyDate(a)) || b.story_id.localeCompare(a.story_id));
+          return { results: eligible.slice(Number(values[0]) || 0).map(item => ({ story_id: item.story_id })) };
+        }
         return { results: [] };
       },
       async run() {
         statements.push({ sql, values, method: 'run' });
+        if (sql.includes("SET review_status = 'rejected'") && sql.includes("origin = 'queue_limit_prune'")) {
+          const storyId = values[0];
+          const row = queue.get(storyId);
+          if (row?.review_status !== 'pending') return { meta: { changes: 0 } };
+          queue.set(storyId, { ...row, review_status: 'rejected', origin: 'queue_limit_prune' });
+          return { meta: { changes: 1 } };
+        }
         if (sql.includes('INSERT INTO story_review_queue')) {
           const [storyId, batchId, storyJson, origin] = values;
           const prior = queue.get(storyId);
@@ -209,27 +238,47 @@ function createSchedulerDb() {
   };
 }
 
-test('accepts exactly three valid stories with HTTPS sources', () => assert.deepEqual(validateDigest(valid), { ok: true }));
+test('accepts a five-story digest and the ten-story maximum', () => {
+  assert.deepEqual(validateDigest(valid), { ok: true });
+  const tenStories = Array.from({ length: 10 }, (_, index) => ({
+    id: `story-${index + 1}`,
+    title: `خبر آزمایشی ${index + 1}`,
+    summary: `خلاصه خبر ${index + 1}`,
+    source_url: `https://example.com/story-${index + 1}`
+  }));
+  assert.deepEqual(validateDigest({ ...valid, stories: tenStories }), { ok: true });
+});
+test('health endpoint reports the deployed digest story range', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/health'), { PUBLISH_ENABLED: 'false' });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.digest_story_min, 5);
+  assert.equal(body.digest_story_max, 10);
+  assert.equal(body.pending_story_limit, 10);
+  assert.equal(body.publish_interval_hours, 8);
+  assert.equal(body.mode, 'dry-run');
+});
+
 test('rejects a digest without a batch id', () => assert.equal(validateDigest({ ...valid, batch_id: '' }).ok, false));
-test('rejects fewer than three stories', () => assert.equal(validateDigest({ ...valid, stories: stories.slice(0, 2) }).ok, false));
-test('rejects more than three stories', () => assert.equal(validateDigest({ ...valid, stories: [...stories, { ...stories[0], id: 'story-4' }] }).ok, false));
-test('rejects duplicate story ids', () => assert.equal(validateDigest({ ...valid, stories: [stories[0], stories[1], { ...stories[2], id: stories[0].id }] }).ok, false));
-test('rejects non-HTTPS source URLs', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: 'http://example.com' }, stories[1], stories[2]] }).ok, false));
-test('rejects a story missing its source URL', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: '' }, stories[1], stories[2]] }).ok, false));
-test('rejects oversized story text', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], summary: 'x'.repeat(2501) }, stories[1], stories[2]] }).ok, false));
+test('rejects fewer than five stories', () => assert.equal(validateDigest({ ...valid, stories: stories.slice(0, 4) }).ok, false));
+test('rejects more than ten stories', () => assert.equal(validateDigest({ ...valid, stories: [...stories, ...Array.from({ length: 6 }, (_, index) => ({ ...stories[0], id: `extra-${index + 1}` }))] }).ok, false));
+test('rejects duplicate story ids', () => assert.equal(validateDigest({ ...valid, stories: [stories[0], stories[1], { ...stories[2], id: stories[0].id }, stories[3], stories[4]] }).ok, false));
+test('rejects non-HTTPS source URLs', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: 'http://example.com' }, ...stories.slice(1)] }).ok, false));
+test('rejects a story missing its source URL', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], source_url: '' }, ...stories.slice(1)] }).ok, false));
+test('rejects oversized story text', () => assert.equal(validateDigest({ ...valid, stories: [{ ...stories[0], summary: 'x'.repeat(2501) }, ...stories.slice(1)] }).ok, false));
 
 test('accepts an optional direct HTTPS image URL', () => {
-  const withImage = { ...valid, stories: [{ ...stories[0], image_url: 'https://cdn.example.com/news.jpg', image_credit: 'Example Company', image_alt: 'تصویر نمونه محصول' }, stories[1], stories[2]] };
+  const withImage = { ...valid, stories: stories.map((story, index) => index === 0 ? { ...story, image_url: 'https://cdn.example.com/news.jpg', image_credit: 'Example Company', image_alt: 'تصویر نمونه محصول' } : story) };
   assert.deepEqual(validateDigest(withImage), { ok: true });
 });
 
 test('rejects non-HTTPS image URLs', () => {
-  const withImage = { ...valid, stories: [{ ...stories[0], image_url: 'http://cdn.example.com/news.jpg' }, stories[1], stories[2]] };
+  const withImage = { ...valid, stories: stories.map((story, index) => index === 0 ? { ...story, image_url: 'http://cdn.example.com/news.jpg' } : story) };
   assert.equal(validateDigest(withImage).ok, false);
 });
 
 test('rejects malformed image metadata', () => {
-  const withImage = { ...valid, stories: [{ ...stories[0], image_credit: 'x'.repeat(161) }, stories[1], stories[2]] };
+  const withImage = { ...valid, stories: stories.map((story, index) => index === 0 ? { ...story, image_credit: 'x'.repeat(161) } : story) };
   assert.equal(validateDigest(withImage).ok, false);
 });
 
@@ -412,7 +461,7 @@ test('combines admin review callbacks and direct proxy URL buttons in separate r
 });
 
 test('rejects non-HTTPS proxy links', () => {
-  const invalid = { ...valid, stories: [{ ...stories[0], proxy1_url: 'http://t.me/proxy' }, stories[1], stories[2]] };
+  const invalid = { ...valid, stories: stories.map((story, index) => index === 0 ? { ...story, proxy1_url: 'http://t.me/proxy' } : story) };
   assert.equal(validateDigest(invalid).ok, false);
 });
 
@@ -725,7 +774,7 @@ test('rapid latest-news button clicks are throttled for the same private chat', 
 
     assert.equal(first.status, 200);
     assert.equal(second.status, 200);
-    assert.equal(calls.filter(x => x.url.endsWith('/sendPhoto')).length, 3);
+    assert.equal(calls.filter(x => x.url.endsWith('/sendPhoto')).length, 5);
     assert.equal(calls.filter(x => x.url.endsWith('/sendMessage') && /آخرین بسته خبری/.test(x.payload.text)).length, 1);
     const throttledToast = calls.find(x =>
       x.url.endsWith('/answerCallbackQuery') &&
@@ -888,12 +937,102 @@ test('scheduled Cron queues a digest and publishes only one pending story per ru
     await runCron();
     assert.equal(telegramCalls.filter(method => method === 'sendMessage').length, 1);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'published').length, 1);
-    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 2);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 4);
 
     await runCron();
     assert.equal(telegramCalls.filter(method => method === 'sendMessage').length, 2);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'published').length, 2);
-    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 1);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('scheduled Cron discards the oldest pending stories without re-queueing them, and preserves in-flight stories', async () => {
+  const DB = createSchedulerDb();
+  const previousStories = Array.from({ length: 8 }, (_, index) => ({
+    id: `old-${index + 1}`,
+    title: `خبر قدیمی ${index + 1}`,
+    summary: 'خبر قدیمی نمونه',
+    source_url: `https://example.com/old-${index + 1}`,
+    published_at: `2026-11-20T0${index}:00:00Z`
+  }));
+  previousStories.forEach(story => DB.queue.set(story.id, {
+    story_id: story.id,
+    batch_id: 'previous-batch',
+    story_json: JSON.stringify(story),
+    review_status: 'pending',
+    origin: 'scheduled',
+    updated_at: story.published_at
+  }));
+  const inFlight = {
+    id: 'in-flight-1',
+    title: 'خبر در حال ارسال',
+    summary: 'ارسال آن باید حفظ شود',
+    source_url: 'https://example.com/in-flight',
+    published_at: '2026-11-18T00:00:00Z'
+  };
+  DB.queue.set(inFlight.id, {
+    story_id: inFlight.id,
+    batch_id: 'in-flight-batch',
+    story_json: JSON.stringify(inFlight),
+    review_status: 'publishing',
+    origin: 'scheduled',
+    updated_at: inFlight.published_at
+  });
+
+  const digest = {
+    batch_id: 'older-batch',
+    stories: stories.map((story, index) => ({
+      ...story,
+      published_at: `2026-11-19T0${index}:00:00Z`
+    }))
+  };
+  const originalFetch = globalThis.fetch;
+  let telegramCalls = 0;
+  globalThis.fetch = async url => {
+    const target = String(url);
+    if (target.startsWith('https://api.github.com/')) {
+      return new Response(JSON.stringify({ type: 'file', content: Buffer.from(JSON.stringify(digest), 'utf8').toString('base64') }), { status: 200 });
+    }
+    if (target.startsWith('https://api.telegram.org/')) telegramCalls++;
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const runCron = async () => {
+      const pending = [];
+      worker.scheduled({}, {
+        DB,
+        GITHUB_OWNER: 'owner',
+        GITHUB_REPO: 'repo',
+        GITHUB_BRANCH: 'main',
+        GITHUB_PATH: 'content/ready-digest.json',
+        PUBLISH_ENABLED: 'false'
+      }, { waitUntil(promise) { pending.push(promise); } });
+      await Promise.all(pending);
+    };
+
+    await runCron();
+    let pendingIds = [...DB.queue.values()].filter(row => row.review_status === 'pending').map(row => row.story_id);
+    assert.equal(pendingIds.length, 10);
+    for (const id of ['story-1', 'story-2', 'story-3']) {
+      assert.equal(DB.queue.get(id).review_status, 'rejected');
+      assert.equal(DB.queue.get(id).origin, 'queue_limit_prune');
+    }
+    assert.equal(DB.queue.get('story-4').review_status, 'pending');
+    assert.equal(DB.queue.get('story-5').review_status, 'pending');
+    assert.equal(DB.queue.get('in-flight-1').review_status, 'publishing');
+    assert.equal(telegramCalls, 0);
+    assert.ok(DB.events.some(event => event.event === 'old_pending_stories_discarded' && JSON.parse(event.detail).discarded_count === 3));
+
+    // The same GitHub digest is read again on the next Cron. Pruned IDs remain
+    // rejected and must not be reinserted into the active queue.
+    await runCron();
+    pendingIds = [...DB.queue.values()].filter(row => row.review_status === 'pending').map(row => row.story_id);
+    assert.equal(pendingIds.length, 10);
+    for (const id of ['story-1', 'story-2', 'story-3']) {
+      assert.equal(DB.queue.get(id).review_status, 'rejected');
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -926,9 +1065,9 @@ test('scheduled Cron keeps the queue but sends nothing while PUBLISH_ENABLED is 
       PUBLISH_ENABLED: 'false'
     }, { waitUntil(promise) { pending.push(promise); } });
     await Promise.all(pending);
-    assert.equal(DB.queue.size, 3);
+    assert.equal(DB.queue.size, 5);
     assert.equal(telegramCalls, 0);
-    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 3);
+    assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 5);
   } finally {
     globalThis.fetch = originalFetch;
   }
