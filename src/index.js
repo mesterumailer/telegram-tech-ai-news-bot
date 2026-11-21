@@ -3,6 +3,8 @@ import { refreshNewsFeeds, listNewsFeedCandidates } from "./news-feed.js";
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
 const MIN_DIGEST_STORIES = 5;
 const MAX_DIGEST_STORIES = 10;
+const MAX_PENDING_QUEUE_STORIES = 10;
+const PUBLISH_INTERVAL_HOURS = 8;
 
 export default {
   async fetch(request, env, ctx) {
@@ -22,7 +24,7 @@ export default {
       }
     }
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, service: "telegram-news-publisher", mode: env.PUBLISH_ENABLED === "true" ? "publish" : "dry-run", digest_story_min: MIN_DIGEST_STORIES, digest_story_max: MAX_DIGEST_STORIES });
+      return json({ ok: true, service: "telegram-news-publisher", mode: env.PUBLISH_ENABLED === "true" ? "publish" : "dry-run", digest_story_min: MIN_DIGEST_STORIES, digest_story_max: MAX_DIGEST_STORIES, pending_story_limit: MAX_PENDING_QUEUE_STORIES, publish_interval_hours: PUBLISH_INTERVAL_HOURS });
     }
     if (request.method === "GET" && url.pathname === "/proxy-status") {
       try {
@@ -121,6 +123,7 @@ export default {
       const mode = await getSetting(env, "publication_mode", "manual");
       if (mode !== "auto") {
         const queuedCount = await queueDigestForReview(digest, env, "manual_api");
+        await discardExcessPendingStories(env);
         if (queuedCount > 0 && env.TELEGRAM_ADMIN_USER_ID) await notifyPendingDigest(env, digest);
         return json({ ok: true, status: "queued_for_admin_review", batch_id: digest.batch_id });
       }
@@ -204,7 +207,7 @@ export default {
         }
 
         // Refresh trusted RSS sources on every Cron run. Feed discovery is separate
-        // from editorial approval: only the GPT-prepared three-story digest is queued.
+        // from editorial approval: only a GPT-prepared 5–10 story digest is queued.
         try {
           const feedReport = await refreshNewsFeeds(env);
           await logEvent(env, "news_feeds_refreshed", JSON.stringify(feedReport));
@@ -232,8 +235,16 @@ export default {
           await logEvent(env, "digest_fetch_failed", safeError(error));
         }
 
+        // Keep only the ten newest eligible pending stories. This also runs when
+        // GitHub is unavailable, preventing an old backlog from growing.
+        try {
+          await discardExcessPendingStories(env);
+        } catch (error) {
+          await logEvent(env, "pending_queue_prune_failed", safeError(error));
+        }
+
         // PUBLISH_ENABLED remains the single global emergency stop.
-        // Each six-hour Cron invocation publishes at most one queued story.
+        // Each eight-hour Cron invocation publishes at most one queued story.
         if (env.PUBLISH_ENABLED !== "true") {
           await logEvent(env, "auto_publish_paused", "PUBLISH_ENABLED master switch is false");
           return;
@@ -1055,13 +1066,49 @@ async function queueDigestForReview(digest, env, origin) {
   return inserted;
 }
 
+async function discardExcessPendingStories(env) {
+  const overflow = await env.DB.prepare(`SELECT q.story_id
+    FROM story_review_queue q
+    LEFT JOIN published_stories p ON p.story_id = q.story_id
+    WHERE q.review_status = 'pending'
+      AND (p.story_id IS NULL OR p.status = 'dry_run')
+    ORDER BY COALESCE(NULLIF(json_extract(q.story_json, '$.published_at'), ''), q.updated_at) DESC,
+      q.updated_at DESC, q.story_id DESC
+    LIMIT -1 OFFSET ?`)
+    .bind(MAX_PENDING_QUEUE_STORIES).all();
+
+  const storyIds = (overflow.results || []).map(row => row.story_id).filter(Boolean);
+  if (!storyIds.length) return { discarded: 0, story_ids: [] };
+
+  const discardedIds = [];
+  for (let offset = 0; offset < storyIds.length; offset += 100) {
+    const chunk = storyIds.slice(offset, offset + 100);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const result = await env.DB.prepare(`DELETE FROM story_review_queue
+      WHERE review_status = 'pending' AND story_id IN (${placeholders})`)
+      .bind(...chunk).run();
+    if ((result.meta?.changes ?? 0) > 0) discardedIds.push(...chunk);
+  }
+
+  if (discardedIds.length) {
+    await logEvent(env, "old_pending_stories_discarded", JSON.stringify({
+      retained_limit: MAX_PENDING_QUEUE_STORIES,
+      discarded_count: discardedIds.length,
+      story_ids: discardedIds.slice(0, 25),
+      additional_story_ids: Math.max(0, discardedIds.length - 25)
+    }));
+  }
+  return { discarded: discardedIds.length, story_ids: discardedIds };
+}
+
 async function publishNextQueuedStory(env, origin) {
   const candidate = await env.DB.prepare(`SELECT q.story_id, q.story_json, q.batch_id
     FROM story_review_queue q
     LEFT JOIN published_stories p ON p.story_id = q.story_id
     WHERE q.review_status = 'pending'
       AND (p.story_id IS NULL OR p.status = 'dry_run')
-    ORDER BY q.updated_at ASC, q.story_id ASC
+    ORDER BY COALESCE(NULLIF(json_extract(q.story_json, '$.published_at'), ''), q.updated_at) ASC,
+      q.updated_at ASC, q.story_id ASC
     LIMIT 1`).first();
 
   if (!candidate) {
