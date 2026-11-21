@@ -1038,8 +1038,10 @@ async function showLatestNews(env, chatId, adminView = true) {
     let keyboard;
     let statusLabel = "";
     if (adminView) {
-      const status = await env.DB.prepare("SELECT review_status FROM story_review_queue WHERE story_id = ?").bind(story.id).first();
-      statusLabel = status?.review_status === "approved" ? "تأیید شده" : status?.review_status === "rejected" ? "رد شده" : "در انتظار بررسی";
+      const status = await env.DB.prepare("SELECT review_status, origin FROM story_review_queue WHERE story_id = ?").bind(story.id).first();
+      statusLabel = status?.origin === "queue_limit_prune"
+        ? "خبر قدیمی‌تر؛ از صف انتشار خارج شده"
+        : status?.review_status === "approved" ? "تأیید شده" : status?.review_status === "rejected" ? "رد شده" : "در انتظار بررسی";
       keyboard = buildStoryKeyboard(story, proxyLinks, true, status?.review_status || "pending");
     } else {
       keyboard = buildStoryKeyboard(story, proxyLinks, false);
@@ -1084,10 +1086,13 @@ async function discardExcessPendingStories(env) {
   for (let offset = 0; offset < storyIds.length; offset += 100) {
     const chunk = storyIds.slice(offset, offset + 100);
     const placeholders = chunk.map(() => "?").join(", ");
-    const result = await env.DB.prepare(`DELETE FROM story_review_queue
-      WHERE review_status = 'pending' AND story_id IN (${placeholders})`)
-      .bind(...chunk).run();
-    if ((result.meta?.changes ?? 0) > 0) discardedIds.push(...chunk);
+    for (const storyId of chunk) {
+      const result = await env.DB.prepare(`UPDATE story_review_queue
+        SET review_status = 'rejected', origin = 'queue_limit_prune'
+        WHERE review_status = 'pending' AND story_id = ?`)
+        .bind(storyId).run();
+      if ((result.meta?.changes ?? 0) === 1) discardedIds.push(storyId);
+    }
   }
 
   if (discardedIds.length) {
