@@ -182,16 +182,12 @@ function createSchedulerDb() {
       },
       async run() {
         statements.push({ sql, values, method: 'run' });
-        if (sql.includes('DELETE FROM story_review_queue')) {
-          let changes = 0;
-          for (const storyId of values) {
-            const row = queue.get(storyId);
-            if (row?.review_status === 'pending') {
-              queue.delete(storyId);
-              changes++;
-            }
-          }
-          return { meta: { changes } };
+        if (sql.includes("SET review_status = 'rejected'") && sql.includes("origin = 'queue_limit_prune'")) {
+          const storyId = values[0];
+          const row = queue.get(storyId);
+          if (row?.review_status !== 'pending') return { meta: { changes: 0 } };
+          queue.set(storyId, { ...row, review_status: 'rejected', origin: 'queue_limit_prune' });
+          return { meta: { changes: 1 } };
         }
         if (sql.includes('INSERT INTO story_review_queue')) {
           const [storyId, batchId, storyJson, origin] = values;
@@ -952,7 +948,7 @@ test('scheduled Cron queues a digest and publishes only one pending story per ru
   }
 });
 
-test('scheduled Cron discards the oldest pending stories when the active queue exceeds ten', async () => {
+test('scheduled Cron discards the oldest pending stories without re-queueing them, and preserves in-flight stories', async () => {
   const DB = createSchedulerDb();
   const previousStories = Array.from({ length: 8 }, (_, index) => ({
     id: `old-${index + 1}`,
@@ -961,20 +957,35 @@ test('scheduled Cron discards the oldest pending stories when the active queue e
     source_url: `https://example.com/old-${index + 1}`,
     published_at: `2026-11-20T0${index}:00:00Z`
   }));
-  previousStories.forEach((story, index) => DB.queue.set(story.id, {
+  previousStories.forEach(story => DB.queue.set(story.id, {
     story_id: story.id,
     batch_id: 'previous-batch',
     story_json: JSON.stringify(story),
-    review_status: index === 7 ? 'publishing' : 'pending',
+    review_status: 'pending',
     origin: 'scheduled',
     updated_at: story.published_at
   }));
+  const inFlight = {
+    id: 'in-flight-1',
+    title: 'خبر در حال ارسال',
+    summary: 'ارسال آن باید حفظ شود',
+    source_url: 'https://example.com/in-flight',
+    published_at: '2026-11-18T00:00:00Z'
+  };
+  DB.queue.set(inFlight.id, {
+    story_id: inFlight.id,
+    batch_id: 'in-flight-batch',
+    story_json: JSON.stringify(inFlight),
+    review_status: 'publishing',
+    origin: 'scheduled',
+    updated_at: inFlight.published_at
+  });
 
   const digest = {
-    batch_id: 'newer-batch',
+    batch_id: 'older-batch',
     stories: stories.map((story, index) => ({
       ...story,
-      published_at: `2026-11-21T0${index}:00:00Z`
+      published_at: `2026-11-19T0${index}:00:00Z`
     }))
   };
   const originalFetch = globalThis.fetch;
@@ -988,26 +999,40 @@ test('scheduled Cron discards the oldest pending stories when the active queue e
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };
   try {
-    const pending = [];
-    worker.scheduled({}, {
-      DB,
-      GITHUB_OWNER: 'owner',
-      GITHUB_REPO: 'repo',
-      GITHUB_BRANCH: 'main',
-      GITHUB_PATH: 'content/ready-digest.json',
-      PUBLISH_ENABLED: 'false'
-    }, { waitUntil(promise) { pending.push(promise); } });
-    await Promise.all(pending);
+    const runCron = async () => {
+      const pending = [];
+      worker.scheduled({}, {
+        DB,
+        GITHUB_OWNER: 'owner',
+        GITHUB_REPO: 'repo',
+        GITHUB_BRANCH: 'main',
+        GITHUB_PATH: 'content/ready-digest.json',
+        PUBLISH_ENABLED: 'false'
+      }, { waitUntil(promise) { pending.push(promise); } });
+      await Promise.all(pending);
+    };
 
-    const pendingIds = [...DB.queue.values()].filter(row => row.review_status === 'pending').map(row => row.story_id);
+    await runCron();
+    let pendingIds = [...DB.queue.values()].filter(row => row.review_status === 'pending').map(row => row.story_id);
     assert.equal(pendingIds.length, 10);
-    assert.equal(DB.queue.has('old-1'), false);
-    assert.equal(DB.queue.has('old-2'), false);
-    assert.equal(DB.queue.has('old-3'), true);
-    assert.equal(DB.queue.has('old-7'), true);
-    assert.equal(DB.queue.get('old-8').review_status, 'publishing');
+    for (const id of ['story-1', 'story-2', 'story-3']) {
+      assert.equal(DB.queue.get(id).review_status, 'rejected');
+      assert.equal(DB.queue.get(id).origin, 'queue_limit_prune');
+    }
+    assert.equal(DB.queue.get('story-4').review_status, 'pending');
+    assert.equal(DB.queue.get('story-5').review_status, 'pending');
+    assert.equal(DB.queue.get('in-flight-1').review_status, 'publishing');
     assert.equal(telegramCalls, 0);
-    assert.ok(DB.events.some(event => event.event === 'old_pending_stories_discarded' && JSON.parse(event.detail).discarded_count === 2));
+    assert.ok(DB.events.some(event => event.event === 'old_pending_stories_discarded' && JSON.parse(event.detail).discarded_count === 3));
+
+    // The same GitHub digest is read again on the next Cron. Pruned IDs remain
+    // rejected and must not be reinserted into the active queue.
+    await runCron();
+    pendingIds = [...DB.queue.values()].filter(row => row.review_status === 'pending').map(row => row.story_id);
+    assert.equal(pendingIds.length, 10);
+    for (const id of ['story-1', 'story-2', 'story-3']) {
+      assert.equal(DB.queue.get(id).review_status, 'rejected');
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }
