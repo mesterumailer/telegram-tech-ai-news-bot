@@ -219,6 +219,15 @@ test('accepts a five-story digest and the ten-story maximum', () => {
   }));
   assert.deepEqual(validateDigest({ ...valid, stories: tenStories }), { ok: true });
 });
+test('health endpoint reports the deployed digest story range', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/health'), { PUBLISH_ENABLED: 'false' });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.digest_story_min, 5);
+  assert.equal(body.digest_story_max, 10);
+  assert.equal(body.mode, 'dry-run');
+});
+
 test('rejects a digest without a batch id', () => assert.equal(validateDigest({ ...valid, batch_id: '' }).ok, false));
 test('rejects fewer than five stories', () => assert.equal(validateDigest({ ...valid, stories: stories.slice(0, 4) }).ok, false));
 test('rejects more than ten stories', () => assert.equal(validateDigest({ ...valid, stories: [...stories, ...Array.from({ length: 6 }, (_, index) => ({ ...stories[0], id: `extra-${index + 1}` }))] }).ok, false));
