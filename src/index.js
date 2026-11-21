@@ -972,7 +972,7 @@ async function sendAdminMenu(env, chatId) {
 
 async function showPublicationSettings(env, chatId, changed = false) {
   const mode = await getSetting(env, "publication_mode", "manual");
-  const text = `⚙️ <b>تنظیم شیوه انتشار</b>\\n\\nمسیر زمان‌بندی‌شدهٔ Cloudflare: <b>خودکار؛ حداکثر یک خبر در هر اجرای ۶ ساعته</b>.\\n\\nحالت انتخابی زیر فقط برای ارسال از مسیر دستی/API است: <b>${mode === "auto" ? "انتشار خودکار" : "انتشار با تأیید مدیر"}</b>.\\n\\n${env.PUBLISH_ENABLED === "true" ? "کلید اصلی انتشار روشن است." : "کلید اصلی انتشار خاموش است؛ تا زمان روشن‌شدن آن هیچ خبری به کانال ارسال نمی‌شود."}${changed ? "\\n\\nتنظیم ذخیره شد." : ""}`;
+  const text = `⚙️ <b>تنظیم شیوه انتشار</b>\\n\\nمسیر زمان‌بندی‌شدهٔ Cloudflare: <b>خودکار؛ حداکثر یک خبر در هر اجرای ۸ ساعته</b>.\\n\\nحالت انتخابی زیر فقط برای ارسال از مسیر دستی/API است: <b>${mode === "auto" ? "انتشار خودکار" : "انتشار با تأیید مدیر"}</b>.\\n\\n${env.PUBLISH_ENABLED === "true" ? "کلید اصلی انتشار روشن است." : "کلید اصلی انتشار خاموش است؛ تا زمان روشن‌شدن آن هیچ خبری به کانال ارسال نمی‌شود."}${changed ? "\\n\\nتنظیم ذخیره شد." : ""}`;
   return sendBotMessage(env, chatId, text, { inline_keyboard: [
     [{ text: mode === "manual" ? "✓ با تأیید مدیر" : "با تأیید مدیر", callback_data: "mode:manual" }],
     [{ text: mode === "auto" ? "✓ انتشار خودکار" : "انتشار خودکار", callback_data: "mode:auto" }],
@@ -1029,7 +1029,10 @@ async function showLatestNews(env, chatId, adminView = true) {
   const validation = validateDigest(digest);
   if (!validation.ok) return sendBotMessage(env, chatId, `بسته خبری معتبر نیست: ${validation.error}`);
   const proxyLinks = await getCurrentProxyLinks(env, true);
-  if (adminView) await queueDigestForReview(digest, env, "admin_preview");
+  if (adminView) {
+    await queueDigestForReview(digest, env, "admin_preview");
+    await discardExcessPendingStories(env);
+  }
   const intro = adminView
     ? `🗞 آخرین بسته خبری\\nشناسه: ${escapeHtml(digest.batch_id)}\\nتعداد خبر: ${digest.stories.length}\\n\\nهر خبر را جداگانه بررسی و تأیید یا رد کن.`
     : `🗞 آخرین خبرهای آماده\\nتعداد خبر: ${digest.stories.length}`;
@@ -1074,8 +1077,10 @@ async function discardExcessPendingStories(env) {
     LEFT JOIN published_stories p ON p.story_id = q.story_id
     WHERE q.review_status = 'pending'
       AND (p.story_id IS NULL OR p.status = 'dry_run')
-    ORDER BY COALESCE(NULLIF(json_extract(q.story_json, '$.published_at'), ''), q.updated_at) DESC,
-      q.updated_at DESC, q.story_id DESC
+    ORDER BY COALESCE(
+      julianday(CASE WHEN json_valid(q.story_json) THEN json_extract(q.story_json, '$.published_at') END),
+      julianday(q.updated_at)
+    ) DESC, q.updated_at DESC, q.story_id DESC
     LIMIT -1 OFFSET ?`)
     .bind(MAX_PENDING_QUEUE_STORIES).all();
 
@@ -1085,7 +1090,6 @@ async function discardExcessPendingStories(env) {
   const discardedIds = [];
   for (let offset = 0; offset < storyIds.length; offset += 100) {
     const chunk = storyIds.slice(offset, offset + 100);
-    const placeholders = chunk.map(() => "?").join(", ");
     for (const storyId of chunk) {
       const result = await env.DB.prepare(`UPDATE story_review_queue
         SET review_status = 'rejected', origin = 'queue_limit_prune'
@@ -1112,8 +1116,10 @@ async function publishNextQueuedStory(env, origin) {
     LEFT JOIN published_stories p ON p.story_id = q.story_id
     WHERE q.review_status = 'pending'
       AND (p.story_id IS NULL OR p.status = 'dry_run')
-    ORDER BY COALESCE(NULLIF(json_extract(q.story_json, '$.published_at'), ''), q.updated_at) ASC,
-      q.updated_at ASC, q.story_id ASC
+    ORDER BY COALESCE(
+      julianday(CASE WHEN json_valid(q.story_json) THEN json_extract(q.story_json, '$.published_at') END),
+      julianday(q.updated_at)
+    ) ASC, q.updated_at ASC, q.story_id ASC
     LIMIT 1`).first();
 
   if (!candidate) {
