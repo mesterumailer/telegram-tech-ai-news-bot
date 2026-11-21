@@ -22,7 +22,7 @@ export default {
       }
     }
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, service: "telegram-news-publisher", mode: env.PUBLISH_ENABLED === "true" ? "publish" : "dry-run" });
+      return json({ ok: true, service: "telegram-news-publisher", mode: env.PUBLISH_ENABLED === "true" ? "publish" : "dry-run", digest_story_min: MIN_DIGEST_STORIES, digest_story_max: MAX_DIGEST_STORIES });
     }
     if (request.method === "GET" && url.pathname === "/proxy-status") {
       try {
