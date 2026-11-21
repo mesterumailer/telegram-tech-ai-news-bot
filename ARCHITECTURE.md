@@ -7,7 +7,7 @@
 4. Candidate ranking (source trust, freshness, impact, topic fit, audience usefulness)
 5. Local model analysis (strict JSON schema; title, Persian summary, significance, category, confidence)
 6. Validation gate (source URL required; reject unsupported claims and low-confidence output)
-7. Three-story selector with topic diversity
+7. Five-to-ten-story selector with topic diversity
 8. Telegram publisher (idempotency key per scheduled run; partial-send recovery)
 9. Admin controls and audit log
 10. Health checks and failure alerts
@@ -17,8 +17,8 @@ Preferred candidate: Oracle Cloud Always Free Ampere A1 VM, if available in the 
 Fallback: a free sleeping host is suitable only for development/testing, not guaranteed 8-hour publishing. Cloudflare Workers can handle webhooks and scheduled tasks but cannot host a conventional Ollama local model; it would require replacing local-model inference with rule-based summarization or a separate inference host.
 
 ## First release safety rules
-- Do not fabricate a story to reach three items.
-- If fewer than three candidates pass validation, do not publish an incomplete/low-quality digest; log the reason and alert admin.
+- Do not fabricate a story to reach five items.
+- If fewer than five candidates pass validation, do not publish an incomplete/low-quality digest; log the reason and alert admin.
 - Keep source URL in every story.
 - Prevent repeat publication after retries/restarts.
 - Store timestamps in UTC and display in configured timezone.
