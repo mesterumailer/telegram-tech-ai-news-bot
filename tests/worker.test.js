@@ -140,14 +140,22 @@ function createSchedulerDb() {
       async first() {
         statements.push({ sql, values, method: 'first' });
         if (sql.includes('FROM story_review_queue q')) {
-          const row = [...queue.values()]
+          const eligible = [...queue.values()]
             .filter(item => item.review_status === 'pending')
             .filter(item => {
               const prior = published.get(item.story_id);
               return !prior || prior.status === 'dry_run';
-            })
-            .sort((a, b) => a.story_id.localeCompare(b.story_id))[0];
-          return row ? { ...row } : null;
+            });
+          const storyDate = item => {
+            try { return JSON.parse(item.story_json).published_at || item.updated_at || ''; }
+            catch { return item.updated_at || ''; }
+          };
+          if (sql.includes('LIMIT -1 OFFSET ?')) {
+            eligible.sort((a, b) => storyDate(b).localeCompare(storyDate(a)) || b.story_id.localeCompare(a.story_id));
+            return { results: eligible.slice(Number(values[0]) || 0).map(item => ({ story_id: item.story_id })) };
+          }
+          eligible.sort((a, b) => storyDate(a).localeCompare(storyDate(b)) || a.story_id.localeCompare(b.story_id));
+          return eligible[0] ? { ...eligible[0] } : null;
         }
         if (sql.includes('SELECT status FROM published_stories')) {
           return published.get(values[0]) || null;
@@ -156,10 +164,35 @@ function createSchedulerDb() {
       },
       async all() {
         statements.push({ sql, values, method: 'all' });
+        if (sql.includes('FROM story_review_queue q') && sql.includes('LIMIT -1 OFFSET ?')) {
+          const eligible = [...queue.values()]
+            .filter(item => item.review_status === 'pending')
+            .filter(item => {
+              const prior = published.get(item.story_id);
+              return !prior || prior.status === 'dry_run';
+            });
+          const storyDate = item => {
+            try { return JSON.parse(item.story_json).published_at || item.updated_at || ''; }
+            catch { return item.updated_at || ''; }
+          };
+          eligible.sort((a, b) => storyDate(b).localeCompare(storyDate(a)) || b.story_id.localeCompare(a.story_id));
+          return { results: eligible.slice(Number(values[0]) || 0).map(item => ({ story_id: item.story_id })) };
+        }
         return { results: [] };
       },
       async run() {
         statements.push({ sql, values, method: 'run' });
+        if (sql.includes('DELETE FROM story_review_queue')) {
+          let changes = 0;
+          for (const storyId of values) {
+            const row = queue.get(storyId);
+            if (row?.review_status === 'pending') {
+              queue.delete(storyId);
+              changes++;
+            }
+          }
+          return { meta: { changes } };
+        }
         if (sql.includes('INSERT INTO story_review_queue')) {
           const [storyId, batchId, storyJson, origin] = values;
           const prior = queue.get(storyId);
@@ -225,6 +258,8 @@ test('health endpoint reports the deployed digest story range', async () => {
   assert.equal(response.status, 200);
   assert.equal(body.digest_story_min, 5);
   assert.equal(body.digest_story_max, 10);
+  assert.equal(body.pending_story_limit, 10);
+  assert.equal(body.publish_interval_hours, 8);
   assert.equal(body.mode, 'dry-run');
 });
 
@@ -912,6 +947,67 @@ test('scheduled Cron queues a digest and publishes only one pending story per ru
     assert.equal(telegramCalls.filter(method => method === 'sendMessage').length, 2);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'published').length, 2);
     assert.equal([...DB.queue.values()].filter(row => row.review_status === 'pending').length, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('scheduled Cron discards the oldest pending stories when the active queue exceeds ten', async () => {
+  const DB = createSchedulerDb();
+  const previousStories = Array.from({ length: 8 }, (_, index) => ({
+    id: `old-${index + 1}`,
+    title: `خبر قدیمی ${index + 1}`,
+    summary: 'خبر قدیمی نمونه',
+    source_url: `https://example.com/old-${index + 1}`,
+    published_at: `2026-11-20T0${index}:00:00Z`
+  }));
+  previousStories.forEach((story, index) => DB.queue.set(story.id, {
+    story_id: story.id,
+    batch_id: 'previous-batch',
+    story_json: JSON.stringify(story),
+    review_status: index === 7 ? 'publishing' : 'pending',
+    origin: 'scheduled',
+    updated_at: story.published_at
+  }));
+
+  const digest = {
+    batch_id: 'newer-batch',
+    stories: stories.map((story, index) => ({
+      ...story,
+      published_at: `2026-11-21T0${index}:00:00Z`
+    }))
+  };
+  const originalFetch = globalThis.fetch;
+  let telegramCalls = 0;
+  globalThis.fetch = async url => {
+    const target = String(url);
+    if (target.startsWith('https://api.github.com/')) {
+      return new Response(JSON.stringify({ type: 'file', content: Buffer.from(JSON.stringify(digest), 'utf8').toString('base64') }), { status: 200 });
+    }
+    if (target.startsWith('https://api.telegram.org/')) telegramCalls++;
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const pending = [];
+    worker.scheduled({}, {
+      DB,
+      GITHUB_OWNER: 'owner',
+      GITHUB_REPO: 'repo',
+      GITHUB_BRANCH: 'main',
+      GITHUB_PATH: 'content/ready-digest.json',
+      PUBLISH_ENABLED: 'false'
+    }, { waitUntil(promise) { pending.push(promise); } });
+    await Promise.all(pending);
+
+    const pendingIds = [...DB.queue.values()].filter(row => row.review_status === 'pending').map(row => row.story_id);
+    assert.equal(pendingIds.length, 10);
+    assert.equal(DB.queue.has('old-1'), false);
+    assert.equal(DB.queue.has('old-2'), false);
+    assert.equal(DB.queue.has('old-3'), true);
+    assert.equal(DB.queue.has('old-7'), true);
+    assert.equal(DB.queue.get('old-8').review_status, 'publishing');
+    assert.equal(telegramCalls, 0);
+    assert.ok(DB.events.some(event => event.event === 'old_pending_stories_discarded' && JSON.parse(event.detail).discarded_count === 2));
   } finally {
     globalThis.fetch = originalFetch;
   }
