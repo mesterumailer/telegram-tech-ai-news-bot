@@ -1,15 +1,15 @@
 # ربات اخبار فناوری و هوش مصنوعی تلگرام — فاز اول
 
-این پروژه از دو زمان‌بندی مستقل استفاده می‌کند: تولید روزانهٔ بستهٔ سه‌خبری و به‌روزرسانی فایل GitHub، و Cron کلودفلر که هر ۶ ساعت صف D1 را بررسی می‌کند و در هر اجرا حداکثر یک خبر منتشرنشده را ارسال می‌کند. مسیر جایگزین برای ارسال دستی JSON نیز از طریق endpoint امن Worker فراهم است.
+این پروژه از دو زمان‌بندی مستقل استفاده می‌کند: تولید روزانهٔ بستهٔ ۵ تا ۱۰ خبری و به‌روزرسانی فایل GitHub، و Cron کلودفلر که هر ۶ ساعت صف D1 را بررسی می‌کند و در هر اجرا حداکثر یک خبر منتشرنشده را ارسال می‌کند. مسیر جایگزین برای ارسال دستی JSON نیز از طریق endpoint امن Worker فراهم است.
 
 ## طرح مورد توافق
 
-- زمان‌بندی روزانهٔ ChatGPT: آماده‌سازی دقیقاً ۳ خبر تازهٔ فارسی و ثبت بسته در `content/ready-digest.json` شاخهٔ `main`؛ این زمان‌بندی باید در بخش Automations فعال باشد.
+- زمان‌بندی روزانهٔ ChatGPT: آماده‌سازی بین ۵ تا ۱۰ خبر تازهٔ فارسی (هدف ۵ خبر، حداکثر ۱۰ خبر) و ثبت بسته در `content/ready-digest.json` شاخهٔ `main`؛ این زمان‌بندی باید در بخش Automations فعال باشد.
 - GitHub: نگهداری فایل `content/ready-digest.json` با قالب مشخص.
 - Cloudflare Worker: بررسی فایل GitHub و صف پایدار D1 هر ۶ ساعت؛ در هر اجرا فقط یک خبر منتشرنشده را ارسال می‌کند. اگر صف خالی باشد، هیچ پیامی نمی‌فرستد.
 - Cloudflare D1: ثبت شناسه خبرها و وضعیت ارسال برای جلوگیری از تکرار در اجرای مجدد.
 - مسیر جایگزین: `POST /admin/submit` با `Authorization: Bearer <ADMIN_SECRET>` برای ارسال JSON آماده‌شده.
-- مسیر آزمایش واقعی تلگرام: `POST /admin/test-message`؛ فقط با `TELEGRAM_TEST_ENABLED=true` و `ADMIN_SECRET` فعال می‌شود و یک پیام ثابت و مشخصاً آزمایشی می‌فرستد. این مسیر مستقل از `PUBLISH_ENABLED` است و Digest سه‌خبری را تغییر نمی‌دهد.
+- مسیر آزمایش واقعی تلگرام: `POST /admin/test-message`؛ فقط با `TELEGRAM_TEST_ENABLED=true` و `ADMIN_SECRET` فعال می‌شود و یک پیام ثابت و مشخصاً آزمایشی می‌فرستد. این مسیر مستقل از `PUBLISH_ENABLED` است و Digest خبری را تغییر نمی‌دهد.
 - انتشار خودکار با `PUBLISH_ENABLED=true` فعال می‌شود. این کلید، توقف اضطراری سراسری است.
 
 ## ساختار فایل‌ها
@@ -94,10 +94,10 @@ Body: محتوای JSON مطابق قالب بالا.
 
 ## Publication safety (updated)
 
-- A digest must contain **exactly three** stories with unique IDs and HTTPS source links. Fewer than three valid stories are rejected; the Worker does not fill gaps.
+- A digest must contain **5 to 10** stories with unique IDs and HTTPS source links. Fewer than five or more than ten stories are rejected; the Worker does not fill gaps.
 - Publishing uses an atomic D1 claim. A story already marked `sent` is skipped.
 - Stories left in `pending` or `failed` are not automatically retried. They are returned as `manual_review_required` (or `failed`) because a timeout/crash can leave uncertainty about whether Telegram accepted the post. This conservative policy avoids accidental duplicate posts; manual reconciliation is required before retrying.
-- The three-story validation currently checks structure and HTTPS, **not** source reputation or factual accuracy. Trusted-source validation and editorial review remain required before enabling publication.
+- The batch-size validation checks 5–10 stories, structure and HTTPS, **not** source reputation or factual accuracy. Trusted-source validation and editorial review remain required before enabling publication.
 
 
 ## Telegram user and admin interface (phase 1)
