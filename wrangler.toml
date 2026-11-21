@@ -4,9 +4,9 @@ compatibility_date = "2026-10-29"
 keep_vars = true
 
 [triggers]
-# Every 6 hours (UTC). Each run publishes at most one pending story from the D1 queue.
+# Every 8 hours (UTC). Each run publishes at most one pending story; overflow beyond ten eligible pending stories is discarded.
 # keep_vars=true preserves existing Dashboard variables; confirm the live PUBLISH_ENABLED value there.
-crons = ["0 */6 * * *"]
+crons = ["0 */8 * * *"]
 
 [[d1_databases]]
 binding = "DB"
